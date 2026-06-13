@@ -374,24 +374,50 @@ def check_duplicate_vehicle(vehicle_number):
     return not active.empty
 
 
+# -------------------------------------------------
+# Closest Available Station Function
+# -------------------------------------------------
 def get_best_station(dataframe):
     available_df = dataframe[dataframe["Available Chargers"] > 0].copy()
 
     if available_df.empty:
         return None
 
-    available_df["Distance Score"] = available_df["User Distance km"].apply(
-        lambda value: value if pd.notna(value) else 20
-    )
+    if "User Distance km" in available_df.columns:
+        available_df = available_df[pd.notna(available_df["User Distance km"])]
 
-    available_df["Recommendation Score"] = (
-        available_df["Distance Score"] * 0.35
-        + available_df["Estimated Wait Time"] * 0.35
-        + available_df["Price per kWh"] * 0.20
-        - available_df["Rating"] * 2
-    )
+        if available_df.empty:
+            return None
 
-    return available_df.sort_values("Recommendation Score").iloc[0]
+        available_df = available_df.sort_values(
+            by=[
+                "User Distance km",
+                "Estimated Wait Time",
+                "Price per kWh",
+                "Rating"
+            ],
+            ascending=[
+                True,
+                True,
+                True,
+                False
+            ]
+        )
+
+        return available_df.iloc[0]
+
+    return available_df.sort_values(
+        by=[
+            "Estimated Wait Time",
+            "Price per kWh",
+            "Rating"
+        ],
+        ascending=[
+            True,
+            True,
+            False
+        ]
+    ).iloc[0]
 
 
 # -------------------------------------------------
@@ -433,7 +459,7 @@ if location_enabled:
         col_success, col_reset = st.columns([2, 1])
 
         with col_success:
-            st.success("Location enabled successfully. Distance-based recommendations are now active.")
+            st.success("Location enabled successfully. Closest-station recommendation is now active.")
             st.caption(
                 f"Detected location: "
                 f"{round(float(st.session_state.user_latitude), 5)}, "
@@ -450,7 +476,7 @@ if location_enabled:
 else:
     with st.container(border=True):
         st.write(
-            "To recommend the nearest and fastest charging station, VoltIQ can use your current browser location. "
+            "To recommend the closest available charging station, VoltIQ can use your current browser location. "
             "Your location is used only for distance calculation inside this app."
         )
 
@@ -472,8 +498,7 @@ else:
                     st.rerun()
                 else:
                     st.info(
-                        "Waiting for browser location. If the browser already asked permission, please wait a few seconds. "
-                        "If nothing happens, use manual location below."
+                        "Waiting for browser location. If nothing happens, use manual location below."
                     )
 
     manual_location = st.checkbox("Enter location manually instead")
@@ -714,7 +739,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
 # Tab 1: Find Charger
 # -------------------------------------------------
 with tab1:
-    st.markdown("## 🔍 Recommended Charging Station")
+    st.markdown("## 🔍 Closest Available Charging Station")
 
     if filtered_df.empty:
         st.warning("No charging stations found for your selected filters.")
@@ -722,9 +747,12 @@ with tab1:
         best_station = get_best_station(filtered_df)
 
         if best_station is None:
-            st.error("All matching stations are currently full. You may join the queue from the reservation tab.")
+            st.error("No available charging station found. Enable location or change filters.")
         else:
-            st.success("Best station recommended based on distance, availability, wait time, price, and rating.")
+            if pd.notna(best_station["User Distance km"]):
+                st.success("Closest available charging station found based on your current location.")
+            else:
+                st.success("Available charging station found. Enable location to get the closest station.")
 
             col_left, col_right = st.columns([2, 1])
 
@@ -759,7 +787,15 @@ with tab2:
     if filtered_df.empty:
         st.warning("No station details available.")
     else:
-        for _, row in filtered_df.iterrows():
+        sorted_details_df = filtered_df.copy()
+
+        if location_enabled:
+            sorted_details_df = sorted_details_df.sort_values(
+                by=["User Distance km", "Estimated Wait Time"],
+                ascending=[True, True]
+            )
+
+        for _, row in sorted_details_df.iterrows():
             with st.container(border=True):
                 col_a, col_b, col_c = st.columns([2, 1, 1])
 
@@ -804,9 +840,17 @@ with tab3:
     if filtered_df.empty:
         st.warning("No charging stations are available for reservation with the selected filters.")
     else:
+        reservation_df = filtered_df.copy()
+
+        if location_enabled:
+            reservation_df = reservation_df.sort_values(
+                by=["User Distance km", "Estimated Wait Time"],
+                ascending=[True, True]
+            )
+
         selected_station = st.selectbox(
             "Select Charging Station",
-            filtered_df["Station Name"].tolist()
+            reservation_df["Station Name"].tolist()
         )
 
         selected_station_data = df[df["Station Name"] == selected_station].iloc[0]
@@ -908,7 +952,15 @@ with tab4:
 
         st.markdown("### Quick Navigation Links")
 
-        for _, row in filtered_df.iterrows():
+        navigation_df = filtered_df.copy()
+
+        if location_enabled:
+            navigation_df = navigation_df.sort_values(
+                by=["User Distance km"],
+                ascending=True
+            )
+
+        for _, row in navigation_df.iterrows():
             col_nav1, col_nav2, col_nav3 = st.columns([2, 1, 1])
 
             with col_nav1:
@@ -1004,7 +1056,7 @@ with tab6:
         **VoltIQ Technologies Pvt. Ltd** provides a smart and user-friendly platform where users can:
 
         - Allow location access
-        - Find nearby EV charging stations
+        - Find the closest available EV charging station
         - View charger availability
         - Check queue length
         - Estimate waiting time
