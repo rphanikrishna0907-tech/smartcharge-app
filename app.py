@@ -117,6 +117,26 @@ LOCATIONS = {
     "Kondapur": (17.4698, 78.3578),
 }
 
+EV_MODELS = [
+    "Tata Nexon EV",
+    "Tata Tiago EV",
+    "Tata Tigor EV",
+    "Tata Punch EV",
+    "MG ZS EV",
+    "MG Comet EV",
+    "Mahindra XUV400 EV",
+    "Hyundai Kona Electric",
+    "Hyundai IONIQ 5",
+    "BYD Atto 3",
+    "BYD Seal",
+    "Kia EV6",
+    "Citroen eC3",
+    "Mercedes-Benz EQB",
+    "BMW i4",
+    "Audi e-tron",
+    "Other",
+]
+
 BATTERY_TYPES = [
     "Lithium-ion Battery",
     "LFP Battery",
@@ -183,7 +203,6 @@ def load_df(path, columns, default_rows=None):
         save_df(df, path)
         return df
 
-    # Old version compatibility
     if columns == VEHICLE_COLUMNS and "Battery Type" not in df.columns and "Battery Capacity kWh" in df.columns:
         df["Battery Type"] = "Lithium-ion Battery"
 
@@ -273,8 +292,10 @@ def make_numeric(df):
         "Latitude",
         "Longitude",
     ]
+
     for col in numeric_columns:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
     return df
 
 
@@ -293,10 +314,13 @@ def wait_time(queue, charging_type):
 
 def availability_text(available):
     available = int(available)
+
     if available >= 3:
         return "Good Availability"
+
     if available >= 1:
         return "Limited Availability"
+
     return "Currently Full"
 
 
@@ -306,14 +330,18 @@ def health_text(total, faulty):
 
     if total <= 0:
         return "Invalid"
+
     if faulty == 0:
         return "Excellent"
 
     ratio = faulty / total
+
     if ratio <= 0.20:
         return "Good"
+
     if ratio <= 0.40:
         return "Average"
+
     return "Poor"
 
 
@@ -325,6 +353,7 @@ def extract_location(location_data):
         if "coords" in location_data:
             coords = location_data["coords"]
             return coords.get("latitude"), coords.get("longitude")
+
         if "latitude" in location_data and "longitude" in location_data:
             return location_data.get("latitude"), location_data.get("longitude")
 
@@ -376,10 +405,12 @@ def find_best_station(df):
         return None
 
     available = df[df["Available Chargers"] > 0].copy()
+
     if available.empty:
         return None
 
     distance_df = available[pd.notna(available["Distance km"])].copy()
+
     if not distance_df.empty:
         return distance_df.sort_values(
             ["Distance km", "Estimated Wait Time", "Price per kWh", "Rating"],
@@ -408,6 +439,7 @@ def apply_filters(df):
         filtered = filtered[filtered["Connector"] == st.session_state.connector_filter]
 
     search = st.session_state.search_text.strip()
+
     if search:
         filtered = filtered[
             filtered["Station Name"].str.contains(search, case=False, na=False)
@@ -416,6 +448,30 @@ def apply_filters(df):
         ]
 
     return filtered
+
+
+def hero(title, subtitle):
+    st.markdown(
+        f"""
+        <div class="hero-box">
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def section_card(title, text):
+    st.markdown(
+        f"""
+        <div class="section-card">
+            <h3>{title}</h3>
+            <p>{text}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def metric_card(label, value, note=""):
@@ -433,6 +489,7 @@ def metric_card(label, value, note=""):
 
 def station_card(row):
     distance_line = ""
+
     if pd.notna(row.get("Distance km", pd.NA)):
         distance_line = f"<p><b>Distance:</b> {row['Distance km']} km</p>"
 
@@ -440,10 +497,11 @@ def station_card(row):
         f"""
         <div class="station-card">
             <span class="badge green">{row["Availability Status"]}</span>
-            <span class="badge blue">{row["Charging Type"]}</span>
-            <span class="badge orange">{row["Connector"]}</span>
+            <span class="badge cyan">{row["Charging Type"]}</span>
+            <span class="badge yellow">{row["Connector"]}</span>
             <h3>{row["Station Name"]}</h3>
-            <p><b>Network:</b> {row["Network"]} | <b>Area:</b> {row["Area"]} | <b>Health:</b> {row["Health Status"]}</p>
+            <p><b>Network:</b> {row["Network"]}</p>
+            <p><b>Area:</b> {row["Area"]} | <b>Health:</b> {row["Health Status"]}</p>
             <p><b>Address:</b> {row["Address"]}</p>
             <p><b>Amenities:</b> {row["Amenities"]}</p>
             {distance_line}
@@ -454,116 +512,123 @@ def station_card(row):
 
 
 # ==================================================
-# FINAL SOFT READABLE UI
+# DARK MODE THEME
 # ==================================================
 st.markdown(
     """
     <style>
-    :root {
-        --bg: #F7FAFC;
-        --card: #FFFFFF;
-        --text: #111827;
-        --muted: #475569;
-        --border: #CBD5E1;
-        --blue: #2563EB;
-        --blue-dark: #1D4ED8;
-    }
-
-    html, body, .stApp {
-        background: var(--bg) !important;
-        color: var(--text) !important;
+    .stApp {
+        background: #050B18 !important;
+        color: #F8FAFC !important;
     }
 
     .block-container {
         padding-top: 2rem;
-        padding-bottom: 2rem;
+        max-width: 1250px;
     }
 
-    .title {
-        font-size: 40px;
+    h1, h2, h3, h4, h5, h6,
+    p, label, span, div {
+        color: #F8FAFC !important;
+    }
+
+    .hero-box {
+        background: linear-gradient(135deg, #1D4ED8, #0F172A);
+        border: 1px solid #38BDF8;
+        border-radius: 28px;
+        padding: 32px;
+        margin-bottom: 24px;
+        box-shadow: 0 20px 45px rgba(56, 189, 248, 0.22);
+    }
+
+    .hero-box h1 {
+        color: #FFFFFF !important;
+        font-size: 44px;
         font-weight: 900;
-        color: #0F172A !important;
-        margin-bottom: 2px;
+        margin: 0;
     }
 
-    .subtitle {
-        font-size: 17px;
-        color: var(--muted) !important;
-        font-weight: 600;
-        margin-bottom: 18px;
+    .hero-box p {
+        color: #DFF6FF !important;
+        font-size: 18px;
+        font-weight: 700;
+        margin-top: 10px;
+        margin-bottom: 0;
     }
 
-    .hero {
-        background: #FFFFFF !important;
-        color: var(--text) !important;
-        border: 1px solid #D9E4F2 !important;
-        border-radius: 24px;
-        padding: 24px;
+    .section-card {
+        background: #10233F;
+        border: 1px solid #2F80ED;
+        border-radius: 22px;
+        padding: 22px;
         margin-bottom: 22px;
-        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.30);
     }
 
-    .hero h2 {
-        color: #0F172A !important;
+    .section-card h3 {
+        color: #FFFFFF !important;
+        font-size: 25px;
+        font-weight: 900;
         margin-top: 0;
     }
 
-    .hero p {
-        color: #334155 !important;
-        font-weight: 500;
-    }
-
-    .metric-card, .station-card {
-        background: var(--card) !important;
-        color: var(--text) !important;
-        border: 1px solid #E2E8F0 !important;
-        border-radius: 20px;
-        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+    .section-card p {
+        color: #CDEBFF !important;
+        font-size: 16px;
+        font-weight: 600;
     }
 
     .metric-card {
-        padding: 18px;
-        min-height: 105px;
-        margin-bottom: 10px;
+        background: #111827;
+        border: 1px solid #38BDF8;
+        border-radius: 20px;
+        padding: 20px;
+        min-height: 112px;
+        margin-bottom: 12px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
     }
 
     .metric-label {
-        color: #475569 !important;
+        color: #93C5FD !important;
         font-size: 12px;
         font-weight: 900;
         text-transform: uppercase;
     }
 
     .metric-value {
-        color: #0F172A !important;
-        font-size: 30px;
+        color: #FFFFFF !important;
+        font-size: 32px;
         font-weight: 900;
     }
 
     .metric-note {
-        color: #64748B !important;
-        font-size: 12px;
-        font-weight: 600;
+        color: #CDEBFF !important;
+        font-size: 13px;
+        font-weight: 700;
     }
 
     .station-card {
-        padding: 20px;
-        margin-bottom: 16px;
+        background: #0F1E35;
+        border: 1px solid #2F80ED;
+        border-radius: 20px;
+        padding: 22px;
+        margin-bottom: 18px;
+        box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
     }
 
     .station-card h3 {
-        color: #0F172A !important;
+        color: #FFFFFF !important;
         font-weight: 900;
     }
 
     .station-card p {
-        color: #334155 !important;
-        font-weight: 500;
+        color: #CDEBFF !important;
+        font-weight: 600;
     }
 
     .badge {
         display: inline-block;
-        padding: 6px 12px;
+        padding: 7px 13px;
         border-radius: 999px;
         font-weight: 900;
         font-size: 12px;
@@ -571,73 +636,50 @@ st.markdown(
         margin-bottom: 8px;
     }
 
-    .green { background: #DCFCE7; color: #166534 !important; }
-    .blue { background: #DBEAFE; color: #1D4ED8 !important; }
-    .orange { background: #FFEDD5; color: #C2410C !important; }
-
-    h1, h2, h3, h4, h5, h6,
-    p, label, span, div {
-        color: inherit;
+    .green {
+        background: #10B981;
+        color: #FFFFFF !important;
     }
 
-    .stMarkdown, .stMarkdown p,
-    .stCaptionContainer, .stCaptionContainer p {
-        color: var(--text) !important;
+    .cyan {
+        background: #38BDF8;
+        color: #082F49 !important;
+    }
+
+    .yellow {
+        background: #FACC15;
+        color: #422006 !important;
     }
 
     section[data-testid="stSidebar"] {
-        background: #FFFFFF !important;
-        border-right: 1px solid #E2E8F0 !important;
+        background: #07111F !important;
+        border-right: 1px solid #2F80ED !important;
     }
 
     section[data-testid="stSidebar"] * {
-        color: var(--text) !important;
+        color: #F8FAFC !important;
+        -webkit-text-fill-color: #F8FAFC !important;
     }
 
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-    }
-
-    .stTabs [data-baseweb="tab"] {
-        background: #FFFFFF !important;
-        color: #111827 !important;
-        border-radius: 12px !important;
-        margin-right: 4px;
-        font-weight: 800 !important;
-        border: 1px solid var(--border) !important;
-        padding: 10px 14px !important;
-    }
-
-    .stTabs [data-baseweb="tab"] p {
-        color: #111827 !important;
-        font-weight: 800 !important;
-    }
-
-    .stTabs [aria-selected="true"] {
-        background: var(--blue) !important;
-        color: #FFFFFF !important;
-        border: 1px solid var(--blue) !important;
-    }
-
-    .stTabs [aria-selected="true"] p {
-        color: #FFFFFF !important;
-    }
-
-    /* Inputs */
     .stTextInput input,
     .stNumberInput input,
     .stDateInput input,
     .stTimeInput input,
     textarea {
-        background-color: #FFFFFF !important;
-        color: #111827 !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 12px !important;
-        caret-color: #111827 !important;
+        background: #E0F2FE !important;
+        color: #020617 !important;
+        -webkit-text-fill-color: #020617 !important;
+        border: 2px solid #38BDF8 !important;
+        border-radius: 14px !important;
+        min-height: 46px !important;
+        font-weight: 800 !important;
+        caret-color: #020617 !important;
     }
 
-    input::placeholder {
-        color: #64748B !important;
+    input::placeholder,
+    textarea::placeholder {
+        color: #475569 !important;
+        -webkit-text-fill-color: #475569 !important;
         opacity: 1 !important;
     }
 
@@ -645,23 +687,36 @@ st.markdown(
     div[data-baseweb="base-input"],
     div[data-baseweb="input"] > div,
     div[data-baseweb="base-input"] > div {
-        background-color: #FFFFFF !important;
-        color: #111827 !important;
-        border-color: var(--border) !important;
-        border-radius: 12px !important;
+        background: #E0F2FE !important;
+        color: #020617 !important;
+        -webkit-text-fill-color: #020617 !important;
+        border-radius: 14px !important;
+    }
+
+    .stTextInput svg,
+    div[data-baseweb="input"] svg,
+    div[data-baseweb="base-input"] svg {
+        color: #020617 !important;
+        fill: #020617 !important;
     }
 
     div[data-baseweb="select"],
-    div[data-baseweb="select"] > div,
-    div[data-baseweb="select"] div,
-    div[data-baseweb="select"] span {
-        background-color: #FFFFFF !important;
-        color: #111827 !important;
+    div[data-baseweb="select"] *,
+    div[data-baseweb="popover"],
+    div[data-baseweb="popover"] *,
+    ul[role="listbox"],
+    ul[role="listbox"] * {
+        background: #E0F2FE !important;
+        color: #020617 !important;
+        -webkit-text-fill-color: #020617 !important;
+        font-weight: 800 !important;
     }
 
     div[data-baseweb="select"] > div {
-        border: 1px solid var(--border) !important;
-        border-radius: 12px !important;
+        background: #E0F2FE !important;
+        border: 2px solid #38BDF8 !important;
+        border-radius: 14px !important;
+        min-height: 46px !important;
     }
 
     .stTextInput label,
@@ -670,55 +725,109 @@ st.markdown(
     .stDateInput label,
     .stTimeInput label,
     .stCheckbox label {
-        color: #111827 !important;
+        color: #E0F2FE !important;
+        -webkit-text-fill-color: #E0F2FE !important;
+        font-weight: 900 !important;
+    }
+
+    .stCheckbox,
+    .stCheckbox *,
+    label[data-baseweb="checkbox"],
+    label[data-baseweb="checkbox"] * {
+        color: #F8FAFC !important;
+        -webkit-text-fill-color: #F8FAFC !important;
         font-weight: 700 !important;
     }
 
-    .stTextInput svg {
-        color: #334155 !important;
-        fill: #334155 !important;
+    .stButton button,
+    .stFormSubmitButton button,
+    button,
+    a[data-testid="stLinkButton"] {
+        background: #38BDF8 !important;
+        color: #082F49 !important;
+        -webkit-text-fill-color: #082F49 !important;
+        border: 2px solid #7DD3FC !important;
+        border-radius: 14px !important;
+        font-weight: 900 !important;
+        min-height: 46px !important;
+        box-shadow: 0 8px 18px rgba(56, 189, 248, 0.25);
     }
 
-    /* Buttons */
-    .stButton button {
-        border-radius: 12px !important;
-        font-weight: 800 !important;
-        background: var(--blue) !important;
-        color: #FFFFFF !important;
-        border: 1px solid var(--blue) !important;
+    .stButton button *,
+    .stFormSubmitButton button *,
+    button *,
+    a[data-testid="stLinkButton"] *,
+    a[data-testid="stLinkButton"] p,
+    a[data-testid="stLinkButton"] span {
+        color: #082F49 !important;
+        -webkit-text-fill-color: #082F49 !important;
+        font-weight: 900 !important;
     }
 
-    .stButton button:hover {
-        background: var(--blue-dark) !important;
-        color: #FFFFFF !important;
-        border: 1px solid var(--blue-dark) !important;
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
     }
 
-    .stButton button p,
-    .stButton button span,
-    .stButton button div {
-        color: #FFFFFF !important;
+    .stTabs [data-baseweb="tab"] {
+        background: #111827 !important;
+        color: #E0F2FE !important;
+        border: 1px solid #38BDF8 !important;
+        border-radius: 14px !important;
+        padding: 10px 16px !important;
+        font-weight: 900 !important;
     }
 
-    div[data-testid="stDataFrame"] {
-        background: white;
-        border-radius: 14px;
-        padding: 6px;
+    .stTabs [data-baseweb="tab"] p {
+        color: #E0F2FE !important;
+        -webkit-text-fill-color: #E0F2FE !important;
+        font-weight: 900 !important;
+    }
+
+    .stTabs [aria-selected="true"] {
+        background: #38BDF8 !important;
+        border-color: #7DD3FC !important;
+    }
+
+    .stTabs [aria-selected="true"] p,
+    .stTabs [aria-selected="true"] * {
+        color: #082F49 !important;
+        -webkit-text-fill-color: #082F49 !important;
+        font-weight: 900 !important;
     }
 
     .stAlert {
         border-radius: 14px !important;
     }
 
-    .stAlert div,
-    .stAlert p {
-        color: #111827 !important;
+    .stAlert *,
+    div[data-testid="stAlert"] * {
+        color: #020617 !important;
+        -webkit-text-fill-color: #020617 !important;
+        font-weight: 800 !important;
+    }
+
+    div[data-testid="stDataFrame"] {
+        background: #FFFFFF !important;
+        border-radius: 14px;
+        padding: 6px;
+    }
+
+    div[data-testid="stDataFrame"] * {
+        color: #020617 !important;
     }
 
     @media (max-width: 700px) {
-        .title { font-size: 30px; }
-        .hero { padding: 16px; }
-        .metric-value { font-size: 24px; }
+        .hero-box h1 {
+            font-size: 32px;
+        }
+
+        .hero-box {
+            padding: 22px;
+        }
+
+        .metric-value {
+            font-size: 25px;
+        }
     }
     </style>
     """,
@@ -734,6 +843,7 @@ defaults = {
     "user": None,
     "user_lat": None,
     "user_lon": None,
+    "geolocation_attempted": False,
     "area_filter": "All",
     "available_filter": "All",
     "charger_filter": "All",
@@ -750,20 +860,11 @@ for key, value in defaults.items():
 # LOGIN PAGE
 # ==================================================
 if not st.session_state.logged_in:
-    st.markdown('<div class="title">⚡ VoltIQ</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="subtitle">Smart EV charging, queue and reservation system</div>',
-        unsafe_allow_html=True,
-    )
+    hero("⚡ VoltIQ", "Smart EV charging, queue and reservation system")
 
-    st.markdown(
-        """
-        <div class="hero">
-            <h2>Welcome to VoltIQ</h2>
-            <p>Find nearby EV chargers, check availability, save your vehicle and reserve a slot in a simple and user-friendly way.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    section_card(
+        "Welcome to VoltIQ",
+        "Find nearby EV chargers, check live availability, save your vehicle and reserve a charging slot easily.",
     )
 
     login_tab, signup_tab = st.tabs(["Login", "Create Account"])
@@ -788,6 +889,7 @@ if not st.session_state.logged_in:
                 st.rerun()
 
         st.caption("Demo user: user@demo.com / User@123")
+        st.caption("Host login uses the same box with different credentials.")
 
     with signup_tab:
         name = st.text_input("Full Name")
@@ -834,15 +936,11 @@ user = st.session_state.user
 user_id = user["User ID"]
 is_host = user["Role"] == "Host"
 
-left, right = st.columns([3, 1])
+hero("⚡ VoltIQ", f"Logged in as {user['Name']} | {user['Role']}")
 
-with left:
-    st.markdown('<div class="title">⚡ VoltIQ</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subtitle">Live EV Charging Platform</div>', unsafe_allow_html=True)
+logout_col1, logout_col2 = st.columns([5, 1])
 
-with right:
-    st.write(f"**{user['Name']}**")
-    st.write(user["Role"])
+with logout_col2:
     if st.button("Logout", use_container_width=True):
         st.session_state.logged_in = False
         st.session_state.user = None
@@ -858,14 +956,9 @@ if is_host:
     reservations = load_reservations()
     stations_raw = make_numeric(load_stations())
 
-    st.markdown(
-        """
-        <div class="hero">
-            <h2>Host Dashboard</h2>
-            <p>View users, saved vehicles, reservations, and update charger availability from one place.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    section_card(
+        "Host Dashboard",
+        "View users, vehicles, reservations and update charger availability from one place.",
     )
 
     if st.button("Refresh Host Data", type="primary", use_container_width=True):
@@ -874,12 +967,16 @@ if is_host:
     active_count = len(reservations[reservations["Status"].isin(["Confirmed", "Queued"])]) if not reservations.empty else 0
 
     m1, m2, m3, m4 = st.columns(4)
+
     with m1:
         metric_card("Users", len(users[users["Role"] == "User"]), "registered")
+
     with m2:
         metric_card("Vehicles", len(vehicles), "saved")
+
     with m3:
         metric_card("Reservations", len(reservations), "total")
+
     with m4:
         metric_card("Active", active_count, "bookings")
 
@@ -887,6 +984,7 @@ if is_host:
 
     with tab1:
         st.subheader("Reservations")
+
         if reservations.empty:
             st.info("No reservations yet.")
         else:
@@ -895,9 +993,11 @@ if is_host:
                 on="User ID",
                 how="left",
             )
+
             st.dataframe(display, use_container_width=True, hide_index=True)
 
             active_rows = reservations[reservations["Status"].isin(["Confirmed", "Queued"])]
+
             if not active_rows.empty:
                 selected_reservation = st.selectbox(
                     "Select reservation to complete",
@@ -909,6 +1009,7 @@ if is_host:
                     stations_raw = make_numeric(load_stations())
 
                     reservation_row = reservations[reservations["Reservation ID"] == selected_reservation]
+
                     if reservation_row.empty:
                         st.error("Reservation not found.")
                     else:
@@ -917,6 +1018,7 @@ if is_host:
                         status = reservations.at[reservation_index, "Status"]
 
                         station_row = stations_raw[stations_raw["Station ID"] == station_id]
+
                         if station_row.empty:
                             st.error("Station not found.")
                         else:
@@ -924,7 +1026,8 @@ if is_host:
 
                             if status == "Confirmed":
                                 stations_raw.at[station_index, "Occupied Chargers"] = max(
-                                    0, int(stations_raw.at[station_index, "Occupied Chargers"]) - 1
+                                    0,
+                                    int(stations_raw.at[station_index, "Occupied Chargers"]) - 1,
                                 )
                                 stations_raw.at[station_index, "Available Chargers"] = int(
                                     stations_raw.at[station_index, "Available Chargers"]
@@ -932,7 +1035,8 @@ if is_host:
 
                             if status == "Queued":
                                 stations_raw.at[station_index, "Queue Length"] = max(
-                                    0, int(stations_raw.at[station_index, "Queue Length"]) - 1
+                                    0,
+                                    int(stations_raw.at[station_index, "Queue Length"]) - 1,
                                 )
 
                             reservations.at[reservation_index, "Status"] = "Completed"
@@ -947,6 +1051,7 @@ if is_host:
 
     with tab3:
         st.subheader("Saved Vehicles")
+
         if vehicles.empty:
             st.info("No vehicles saved yet.")
         else:
@@ -970,25 +1075,23 @@ if is_host:
                 index = selected_station.index[0]
                 row = stations_raw.loc[index]
 
-                with st.form("station_update_form"):
-                    c1, c2, c3 = st.columns(3)
+                c1, c2, c3 = st.columns(3)
 
-                    with c1:
-                        available = st.number_input("Available Chargers", min_value=0, value=int(row["Available Chargers"]))
-                        queue = st.number_input("Queue Length", min_value=0, value=int(row["Queue Length"]))
+                with c1:
+                    available = st.number_input("Available Chargers", min_value=0, value=int(row["Available Chargers"]))
+                    queue = st.number_input("Queue Length", min_value=0, value=int(row["Queue Length"]))
 
-                    with c2:
-                        occupied = st.number_input("Occupied Chargers", min_value=0, value=int(row["Occupied Chargers"]))
-                        price = st.number_input("Price per kWh", min_value=1, value=int(row["Price per kWh"]))
+                with c2:
+                    occupied = st.number_input("Occupied Chargers", min_value=0, value=int(row["Occupied Chargers"]))
+                    price = st.number_input("Price per kWh", min_value=1, value=int(row["Price per kWh"]))
 
-                    with c3:
-                        faulty = st.number_input("Faulty Chargers", min_value=0, value=int(row["Faulty Chargers"]))
-                        rating = st.number_input("Rating", min_value=1.0, max_value=5.0, value=float(row["Rating"]), step=0.1)
+                with c3:
+                    faulty = st.number_input("Faulty Chargers", min_value=0, value=int(row["Faulty Chargers"]))
+                    rating = st.number_input("Rating", min_value=1.0, max_value=5.0, value=float(row["Rating"]), step=0.1)
 
-                    update_station = st.form_submit_button("Update Station", use_container_width=True)
-
-                if update_station:
+                if st.button("Update Station", use_container_width=True):
                     total = int(row["Total Chargers"])
+
                     if available + occupied + faulty != total:
                         st.error("Available + Occupied + Faulty must equal Total Chargers.")
                     else:
@@ -1016,14 +1119,9 @@ if is_host:
 # ==================================================
 # USER DASHBOARD
 # ==================================================
-st.markdown(
-    """
-    <div class="hero">
-        <h2>User Dashboard</h2>
-        <p>Find chargers, check availability, save your vehicle and reserve your slot with ease.</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
+section_card(
+    "User Dashboard",
+    "Find chargers, check availability, save your vehicle and reserve your charging slot.",
 )
 
 st.subheader("Set Location")
@@ -1032,26 +1130,36 @@ loc1, loc2 = st.columns(2)
 
 with loc1:
     selected_area = st.selectbox("Choose Area Manually", list(LOCATIONS.keys()))
+
     if st.button("Use Selected Area", type="primary", use_container_width=True):
         st.session_state.user_lat, st.session_state.user_lon = LOCATIONS[selected_area]
+        st.session_state.geolocation_attempted = False
         st.success(f"Location set to {selected_area}")
         st.rerun()
 
 with loc2:
     if st.button("Use Automatic Location", use_container_width=True):
-        if get_geolocation is None:
-            st.warning("Automatic location is unavailable. Please use manual area.")
-        else:
-            location_data = get_geolocation()
-            latitude, longitude = extract_location(location_data)
+        st.session_state.geolocation_attempted = True
+        st.rerun()
 
-            if latitude is not None and longitude is not None:
-                st.session_state.user_lat = float(latitude)
-                st.session_state.user_lon = float(longitude)
-                st.success("Automatic location enabled successfully.")
-                st.rerun()
-            else:
-                st.info("Please allow browser location permission, then try again.")
+if st.session_state.user_lat is not None and st.session_state.user_lon is not None:
+    st.success("Location is active. Nearby chargers will be sorted by distance.")
+
+elif st.session_state.geolocation_attempted:
+    if get_geolocation is None:
+        st.warning("Automatic location is unavailable. Please use manual area.")
+    else:
+        location_data = get_geolocation()
+        latitude, longitude = extract_location(location_data)
+
+        if latitude is not None and longitude is not None:
+            st.session_state.user_lat = float(latitude)
+            st.session_state.user_lon = float(longitude)
+            st.session_state.geolocation_attempted = False
+            st.success("Automatic location enabled successfully.")
+            st.rerun()
+        else:
+            st.info("Allow browser location permission. If it still does not work, use manual area.")
 
 stations = get_stations_ready()
 
@@ -1069,12 +1177,16 @@ if st.sidebar.button("Clear Filters"):
 filtered = apply_filters(stations)
 
 m1, m2, m3, m4 = st.columns(4)
+
 with m1:
     metric_card("Stations", len(filtered), "found")
+
 with m2:
     metric_card("Available", int(filtered["Available Chargers"].sum()) if not filtered.empty else 0, "chargers")
+
 with m3:
     metric_card("Queue", int(filtered["Queue Length"].sum()) if not filtered.empty else 0, "vehicles")
+
 with m4:
     avg_price = "₹0" if filtered.empty else f"₹{round(filtered['Price per kWh'].mean(), 2)}"
     metric_card("Avg Price", avg_price, "per kWh")
@@ -1095,10 +1207,12 @@ with tab1:
         st.link_button("Open in Google Maps", best_station["Maps Link"])
 
     st.subheader("All Matching Stations")
+
     if filtered.empty:
         st.info("No station data to show.")
     else:
         display = filtered.copy()
+
         if st.session_state.user_lat is not None:
             display = display.sort_values("Distance km", na_position="last")
 
@@ -1118,6 +1232,7 @@ with tab2:
         st.warning("No stations available for reservation.")
     else:
         booking_df = filtered.copy()
+
         if st.session_state.user_lat is not None:
             booking_df = booking_df.sort_values("Distance km", na_position="last")
 
@@ -1133,31 +1248,29 @@ with tab2:
         vehicles = load_vehicles()
         my_vehicles = vehicles[vehicles["User ID"] == user_id]
 
-        with st.form("reservation_form"):
-            if my_vehicles.empty:
-                vehicle_number = st.text_input("Vehicle Number")
-                ev_model = st.text_input("EV Model")
-            else:
-                chosen_vehicle = st.selectbox("Choose Saved Vehicle", my_vehicles["Vehicle Number"].tolist())
-                vehicle_row = my_vehicles[my_vehicles["Vehicle Number"] == chosen_vehicle].iloc[0]
-                vehicle_number = vehicle_row["Vehicle Number"]
-                ev_model = vehicle_row["EV Model"]
-                st.write(f"EV Model: {ev_model}")
+        if my_vehicles.empty:
+            vehicle_number = st.text_input("Vehicle Number")
+            ev_model = st.selectbox("EV Model", EV_MODELS, key="reservation_ev_model")
+        else:
+            chosen_vehicle = st.selectbox("Choose Saved Vehicle", my_vehicles["Vehicle Number"].tolist())
+            vehicle_row = my_vehicles[my_vehicles["Vehicle Number"] == chosen_vehicle].iloc[0]
+            vehicle_number = vehicle_row["Vehicle Number"]
+            ev_model = vehicle_row["EV Model"]
+            st.write(f"EV Model: {ev_model}")
 
-            driver_name = st.text_input("Driver Name", value=user["Name"])
-            mobile = st.text_input("Mobile Number", value=user["Phone"])
-            booking_date = st.date_input("Date")
-            booking_time = st.time_input("Time")
-            duration = st.selectbox("Duration", ["30 minutes", "1 hour", "1.5 hours", "2 hours"])
-            agree = st.checkbox("I agree to join the queue if the charger becomes unavailable.")
-            confirm_reservation = st.form_submit_button("Confirm Reservation", use_container_width=True)
+        driver_name = st.text_input("Driver Name", value=user["Name"])
+        mobile = st.text_input("Mobile Number", value=user["Phone"])
+        booking_date = st.date_input("Date")
+        booking_time = st.time_input("Time")
+        duration = st.selectbox("Duration", ["30 minutes", "1 hour", "1.5 hours", "2 hours"])
+        agree = st.checkbox("I agree to join the queue if the charger becomes unavailable.")
 
-        if confirm_reservation:
+        if st.button("Confirm Reservation", use_container_width=True):
             reservations = load_reservations()
             stations_raw = make_numeric(load_stations())
 
             vehicle_number = vehicle_number.strip().upper()
-            ev_model = ev_model.strip()
+            ev_model = str(ev_model).strip()
             mobile = str(mobile).strip()
 
             duplicate = reservations[
@@ -1228,23 +1341,22 @@ with tab3:
     else:
         st.dataframe(my_vehicles, use_container_width=True, hide_index=True)
 
-    with st.form("vehicle_form"):
-        vehicle_number = st.text_input("Vehicle Number")
-        ev_model = st.text_input("EV Model")
-        connector = st.selectbox("Connector", ["CCS2", "Type 2", "CHAdeMO"])
-        battery_type = st.selectbox("Battery Type", BATTERY_TYPES)
-        save_vehicle_btn = st.form_submit_button("Save Vehicle", use_container_width=True)
+    vehicle_number = st.text_input("Vehicle Number", key="vehicle_number_input")
+    ev_model = st.selectbox("EV Model", EV_MODELS, key="ev_model_input")
+    connector = st.selectbox("Connector", ["CCS2", "Type 2", "CHAdeMO"], key="connector_vehicle_input")
+    battery_type = st.selectbox("Battery Type", BATTERY_TYPES, key="battery_type_input")
 
-    if save_vehicle_btn:
+    if st.button("Save Vehicle", use_container_width=True):
         vehicles = load_vehicles()
         vehicle_number = vehicle_number.strip().upper()
+        ev_model = str(ev_model).strip()
 
         duplicate_vehicle = vehicles[
             (vehicles["User ID"] == user_id)
             & (vehicles["Vehicle Number"] == vehicle_number)
         ]
 
-        if not vehicle_number or not ev_model.strip():
+        if not vehicle_number or not ev_model:
             st.error("Vehicle number and EV model are required.")
         elif not duplicate_vehicle.empty:
             st.error("This vehicle is already saved.")
@@ -1254,13 +1366,14 @@ with tab3:
                     "VH-" + str(uuid.uuid4())[:8].upper(),
                     user_id,
                     vehicle_number,
-                    ev_model.strip(),
+                    ev_model,
                     connector,
                     battery_type,
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 ]],
                 columns=VEHICLE_COLUMNS,
             )
+
             vehicles = pd.concat([vehicles, new_vehicle], ignore_index=True)
             save_vehicles(vehicles)
             st.success("Vehicle saved successfully.")
@@ -1268,6 +1381,7 @@ with tab3:
 
 with tab4:
     st.subheader("My Reservations")
+
     reservations = load_reservations()
     my_reservations = reservations[reservations["User ID"] == user_id]
 
@@ -1275,4 +1389,3 @@ with tab4:
         st.info("No reservations yet.")
     else:
         st.dataframe(my_reservations, use_container_width=True, hide_index=True)
-
