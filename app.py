@@ -17,9 +17,10 @@ except Exception:
 # PAGE SETUP
 # ==================================================
 st.set_page_config(
-    page_title="VoltIQ Technologies Pvt. Ltd",
+    page_title="VoltIQ",
     page_icon="⚡",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 DATA_DIR = "data"
@@ -38,30 +39,64 @@ DEMO_PASSWORD = "User@123"
 
 
 # ==================================================
-# COLUMNS
+# DATA COLUMNS
 # ==================================================
 USER_COLUMNS = [
-    "User ID", "Name", "Email", "Password Hash", "Phone",
-    "Role", "Preferred Area", "Created At"
+    "User ID",
+    "Name",
+    "Email",
+    "Password Hash",
+    "Phone",
+    "Role",
+    "Preferred Area",
+    "Created At",
 ]
 
 VEHICLE_COLUMNS = [
-    "Vehicle ID", "User ID", "Vehicle Number", "EV Model",
-    "Connector", "Battery Capacity kWh", "Created At"
+    "Vehicle ID",
+    "User ID",
+    "Vehicle Number",
+    "EV Model",
+    "Connector",
+    "Battery Type",
+    "Created At",
 ]
 
 STATION_COLUMNS = [
-    "Station ID", "Station Name", "Network", "Area", "Address",
-    "Charging Type", "Connector", "Total Chargers", "Available Chargers",
-    "Occupied Chargers", "Faulty Chargers", "Queue Length",
-    "Price per kWh", "Rating", "Open 24x7", "Amenities",
-    "Latitude", "Longitude"
+    "Station ID",
+    "Station Name",
+    "Network",
+    "Area",
+    "Address",
+    "Charging Type",
+    "Connector",
+    "Total Chargers",
+    "Available Chargers",
+    "Occupied Chargers",
+    "Faulty Chargers",
+    "Queue Length",
+    "Price per kWh",
+    "Rating",
+    "Open 24x7",
+    "Amenities",
+    "Latitude",
+    "Longitude",
 ]
 
 RESERVATION_COLUMNS = [
-    "Reservation ID", "User ID", "Driver Name", "Vehicle Number",
-    "EV Model", "Mobile Number", "Station ID", "Station Name",
-    "Date", "Time", "Duration", "Status", "Created At"
+    "Reservation ID",
+    "User ID",
+    "Driver Name",
+    "Vehicle Number",
+    "EV Model",
+    "Mobile Number",
+    "Station ID",
+    "Station Name",
+    "Date",
+    "Time",
+    "Duration",
+    "Status",
+    "Created At",
 ]
 
 
@@ -81,6 +116,15 @@ LOCATIONS = {
     "Financial District": (17.4149, 78.3422),
     "Kondapur": (17.4698, 78.3578),
 }
+
+BATTERY_TYPES = [
+    "Lithium-ion Battery",
+    "LFP Battery",
+    "NMC Battery",
+    "Lead Acid Battery",
+    "Solid State Battery",
+    "Other",
+]
 
 DEFAULT_USERS = [
     [
@@ -139,6 +183,10 @@ def load_df(path, columns, default_rows=None):
         save_df(df, path)
         return df
 
+    # Old version compatibility
+    if columns == VEHICLE_COLUMNS and "Battery Type" not in df.columns and "Battery Capacity kWh" in df.columns:
+        df["Battery Type"] = "Lithium-ion Battery"
+
     for col in columns:
         if col not in df.columns:
             df[col] = ""
@@ -156,10 +204,10 @@ def load_users():
     users = load_df(USERS_FILE, USER_COLUMNS, DEFAULT_USERS)
 
     host_hash = hashlib.sha256(HOST_PASSWORD.encode()).hexdigest()
+    demo_hash = hashlib.sha256(DEMO_PASSWORD.encode()).hexdigest()
 
     if "U-ADMIN" not in users["User ID"].tolist():
-        host = pd.DataFrame([DEFAULT_USERS[0]], columns=USER_COLUMNS)
-        users = pd.concat([host, users], ignore_index=True)
+        users = pd.concat([pd.DataFrame([DEFAULT_USERS[0]], columns=USER_COLUMNS), users], ignore_index=True)
 
     host_index = users[users["User ID"] == "U-ADMIN"].index[0]
     users.at[host_index, "Email"] = HOST_LOGIN
@@ -167,8 +215,12 @@ def load_users():
     users.at[host_index, "Role"] = "Host"
 
     if "U-DEMO" not in users["User ID"].tolist():
-        demo = pd.DataFrame([DEFAULT_USERS[1]], columns=USER_COLUMNS)
-        users = pd.concat([users, demo], ignore_index=True)
+        users = pd.concat([users, pd.DataFrame([DEFAULT_USERS[1]], columns=USER_COLUMNS)], ignore_index=True)
+
+    demo_index = users[users["User ID"] == "U-DEMO"].index[0]
+    users.at[demo_index, "Email"] = DEMO_LOGIN
+    users.at[demo_index, "Password Hash"] = demo_hash
+    users.at[demo_index, "Role"] = "User"
 
     save_df(users, USERS_FILE)
     return users
@@ -203,14 +255,14 @@ def save_reservations(df):
 
 
 # ==================================================
-# HELPER FUNCTIONS
+# HELPERS
 # ==================================================
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 
 def make_numeric(df):
-    cols = [
+    numeric_columns = [
         "Total Chargers",
         "Available Chargers",
         "Occupied Chargers",
@@ -221,11 +273,62 @@ def make_numeric(df):
         "Latitude",
         "Longitude",
     ]
-
-    for col in cols:
+    for col in numeric_columns:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-
     return df
+
+
+def distance_km(lat1, lon1, lat2, lon2):
+    radius = 6371
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+    return round(radius * 2 * atan2(sqrt(a), sqrt(1 - a)), 2)
+
+
+def wait_time(queue, charging_type):
+    queue = int(queue)
+    return queue * 30 if charging_type == "DC Fast Charging" else queue * 55
+
+
+def availability_text(available):
+    available = int(available)
+    if available >= 3:
+        return "Good Availability"
+    if available >= 1:
+        return "Limited Availability"
+    return "Currently Full"
+
+
+def health_text(total, faulty):
+    total = int(total)
+    faulty = int(faulty)
+
+    if total <= 0:
+        return "Invalid"
+    if faulty == 0:
+        return "Excellent"
+
+    ratio = faulty / total
+    if ratio <= 0.20:
+        return "Good"
+    if ratio <= 0.40:
+        return "Average"
+    return "Poor"
+
+
+def extract_location(location_data):
+    if not location_data:
+        return None, None
+
+    if isinstance(location_data, dict):
+        if "coords" in location_data:
+            coords = location_data["coords"]
+            return coords.get("latitude"), coords.get("longitude")
+        if "latitude" in location_data and "longitude" in location_data:
+            return location_data.get("latitude"), location_data.get("longitude")
+
+    return None, None
 
 
 def reset_filters():
@@ -236,58 +339,6 @@ def reset_filters():
     st.session_state.search_text = ""
 
 
-def distance_km(lat1, lon1, lat2, lon2):
-    radius = 6371
-    dlat = radians(lat2 - lat1)
-    dlon = radians(lon2 - lon1)
-
-    a = (
-        sin(dlat / 2) ** 2
-        + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
-    )
-
-    c = 2 * atan2(sqrt(a), sqrt(1 - a))
-    return round(radius * c, 2)
-
-
-def wait_time(queue, charging_type):
-    queue = int(queue)
-    return queue * 30 if charging_type == "DC Fast Charging" else queue * 55
-
-
-def availability_text(available):
-    available = int(available)
-
-    if available >= 3:
-        return "Good Availability"
-
-    if available >= 1:
-        return "Limited Availability"
-
-    return "Currently Full"
-
-
-def health_text(total, faulty):
-    total = int(total)
-    faulty = int(faulty)
-
-    if total <= 0:
-        return "Invalid"
-
-    if faulty == 0:
-        return "Excellent"
-
-    ratio = faulty / total
-
-    if ratio <= 0.20:
-        return "Good"
-
-    if ratio <= 0.40:
-        return "Average"
-
-    return "Poor"
-
-
 def get_stations_ready():
     df = load_stations().copy()
 
@@ -296,19 +347,9 @@ def get_stations_ready():
         save_stations(df)
 
     df = make_numeric(df)
-
-    df["Estimated Wait Time"] = df.apply(
-        lambda row: wait_time(row["Queue Length"], row["Charging Type"]),
-        axis=1,
-    )
-
+    df["Estimated Wait Time"] = df.apply(lambda row: wait_time(row["Queue Length"], row["Charging Type"]), axis=1)
     df["Availability Status"] = df["Available Chargers"].apply(availability_text)
-
-    df["Health Status"] = df.apply(
-        lambda row: health_text(row["Total Chargers"], row["Faulty Chargers"]),
-        axis=1,
-    )
-
+    df["Health Status"] = df.apply(lambda row: health_text(row["Total Chargers"], row["Faulty Chargers"]), axis=1)
     df["Maps Link"] = df.apply(
         lambda row: f"https://www.google.com/maps/search/?api=1&query={row['Latitude']},{row['Longitude']}",
         axis=1,
@@ -335,12 +376,10 @@ def find_best_station(df):
         return None
 
     available = df[df["Available Chargers"] > 0].copy()
-
     if available.empty:
         return None
 
     distance_df = available[pd.notna(available["Distance km"])].copy()
-
     if not distance_df.empty:
         return distance_df.sort_values(
             ["Distance km", "Estimated Wait Time", "Price per kWh", "Rating"],
@@ -369,7 +408,6 @@ def apply_filters(df):
         filtered = filtered[filtered["Connector"] == st.session_state.connector_filter]
 
     search = st.session_state.search_text.strip()
-
     if search:
         filtered = filtered[
             filtered["Station Name"].str.contains(search, case=False, na=False)
@@ -394,6 +432,10 @@ def metric_card(label, value, note=""):
 
 
 def station_card(row):
+    distance_line = ""
+    if pd.notna(row.get("Distance km", pd.NA)):
+        distance_line = f"<p><b>Distance:</b> {row['Distance km']} km</p>"
+
     st.markdown(
         f"""
         <div class="station-card">
@@ -404,6 +446,7 @@ def station_card(row):
             <p><b>Network:</b> {row["Network"]} | <b>Area:</b> {row["Area"]} | <b>Health:</b> {row["Health Status"]}</p>
             <p><b>Address:</b> {row["Address"]}</p>
             <p><b>Amenities:</b> {row["Amenities"]}</p>
+            {distance_line}
         </div>
         """,
         unsafe_allow_html=True,
@@ -411,51 +454,71 @@ def station_card(row):
 
 
 # ==================================================
-# STYLE
+# FINAL SOFT READABLE UI
 # ==================================================
 st.markdown(
     """
     <style>
-    .stApp {
-        background: linear-gradient(135deg, #07111F 0%, #0B1F3A 55%, #102A43 100%);
-        color: #F8FAFC;
+    :root {
+        --bg: #F7FAFC;
+        --card: #FFFFFF;
+        --text: #111827;
+        --muted: #475569;
+        --border: #CBD5E1;
+        --blue: #2563EB;
+        --blue-dark: #1D4ED8;
+    }
+
+    html, body, .stApp {
+        background: var(--bg) !important;
+        color: var(--text) !important;
+    }
+
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
     }
 
     .title {
-        font-size: 42px;
+        font-size: 40px;
         font-weight: 900;
-        color: white;
-        margin-bottom: 4px;
+        color: #0F172A !important;
+        margin-bottom: 2px;
     }
 
     .subtitle {
         font-size: 17px;
-        color: #C7D2FE;
+        color: var(--muted) !important;
         font-weight: 600;
         margin-bottom: 18px;
     }
 
-    .hero, .station-card, .metric-card {
-        background: #FFFFFF;
-        color: #0F172A;
-        border: 1px solid #CBD5E1;
-        border-radius: 24px;
-        box-shadow: 0 16px 35px rgba(0,0,0,0.22);
-    }
-
     .hero {
+        background: #FFFFFF !important;
+        color: var(--text) !important;
+        border: 1px solid #D9E4F2 !important;
+        border-radius: 24px;
         padding: 24px;
-        margin-bottom: 24px;
+        margin-bottom: 22px;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
     }
 
     .hero h2 {
-        color: #0F172A;
+        color: #0F172A !important;
         margin-top: 0;
     }
 
-    .hero p, .station-card p {
-        color: #334155;
+    .hero p {
+        color: #334155 !important;
         font-weight: 500;
+    }
+
+    .metric-card, .station-card {
+        background: var(--card) !important;
+        color: var(--text) !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 20px;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
     }
 
     .metric-card {
@@ -465,20 +528,20 @@ st.markdown(
     }
 
     .metric-label {
-        color: #475569;
+        color: #475569 !important;
         font-size: 12px;
         font-weight: 900;
         text-transform: uppercase;
     }
 
     .metric-value {
-        color: #0F172A;
+        color: #0F172A !important;
         font-size: 30px;
         font-weight: 900;
     }
 
     .metric-note {
-        color: #64748B;
+        color: #64748B !important;
         font-size: 12px;
         font-weight: 600;
     }
@@ -489,8 +552,13 @@ st.markdown(
     }
 
     .station-card h3 {
-        color: #0F172A;
+        color: #0F172A !important;
         font-weight: 900;
+    }
+
+    .station-card p {
+        color: #334155 !important;
+        font-weight: 500;
     }
 
     .badge {
@@ -503,40 +571,154 @@ st.markdown(
         margin-bottom: 8px;
     }
 
-    .green {background: #DCFCE7; color: #166534;}
-    .blue {background: #DBEAFE; color: #1D4ED8;}
-    .orange {background: #FFEDD5; color: #C2410C;}
+    .green { background: #DCFCE7; color: #166534 !important; }
+    .blue { background: #DBEAFE; color: #1D4ED8 !important; }
+    .orange { background: #FFEDD5; color: #C2410C !important; }
+
+    h1, h2, h3, h4, h5, h6,
+    p, label, span, div {
+        color: inherit;
+    }
+
+    .stMarkdown, .stMarkdown p,
+    .stCaptionContainer, .stCaptionContainer p {
+        color: var(--text) !important;
+    }
 
     section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #FFFFFF 0%, #EAF6FF 100%);
+        background: #FFFFFF !important;
+        border-right: 1px solid #E2E8F0 !important;
     }
 
     section[data-testid="stSidebar"] * {
-        color: #0F172A !important;
+        color: var(--text) !important;
+    }
+
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
     }
 
     .stTabs [data-baseweb="tab"] {
-        background: white;
-        color: #0F172A;
-        border-radius: 14px;
-        margin-right: 6px;
-        font-weight: 800;
+        background: #FFFFFF !important;
+        color: #111827 !important;
+        border-radius: 12px !important;
+        margin-right: 4px;
+        font-weight: 800 !important;
+        border: 1px solid var(--border) !important;
+        padding: 10px 14px !important;
+    }
+
+    .stTabs [data-baseweb="tab"] p {
+        color: #111827 !important;
+        font-weight: 800 !important;
     }
 
     .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #06B6D4, #2563EB) !important;
-        color: white !important;
+        background: var(--blue) !important;
+        color: #FFFFFF !important;
+        border: 1px solid var(--blue) !important;
     }
 
+    .stTabs [aria-selected="true"] p {
+        color: #FFFFFF !important;
+    }
+
+    /* Inputs */
+    .stTextInput input,
+    .stNumberInput input,
+    .stDateInput input,
+    .stTimeInput input,
+    textarea {
+        background-color: #FFFFFF !important;
+        color: #111827 !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 12px !important;
+        caret-color: #111827 !important;
+    }
+
+    input::placeholder {
+        color: #64748B !important;
+        opacity: 1 !important;
+    }
+
+    div[data-baseweb="input"],
+    div[data-baseweb="base-input"],
+    div[data-baseweb="input"] > div,
+    div[data-baseweb="base-input"] > div {
+        background-color: #FFFFFF !important;
+        color: #111827 !important;
+        border-color: var(--border) !important;
+        border-radius: 12px !important;
+    }
+
+    div[data-baseweb="select"],
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="select"] div,
+    div[data-baseweb="select"] span {
+        background-color: #FFFFFF !important;
+        color: #111827 !important;
+    }
+
+    div[data-baseweb="select"] > div {
+        border: 1px solid var(--border) !important;
+        border-radius: 12px !important;
+    }
+
+    .stTextInput label,
+    .stSelectbox label,
+    .stNumberInput label,
+    .stDateInput label,
+    .stTimeInput label,
+    .stCheckbox label {
+        color: #111827 !important;
+        font-weight: 700 !important;
+    }
+
+    .stTextInput svg {
+        color: #334155 !important;
+        fill: #334155 !important;
+    }
+
+    /* Buttons */
     .stButton button {
-        border-radius: 12px;
-        font-weight: 800;
+        border-radius: 12px !important;
+        font-weight: 800 !important;
+        background: var(--blue) !important;
+        color: #FFFFFF !important;
+        border: 1px solid var(--blue) !important;
+    }
+
+    .stButton button:hover {
+        background: var(--blue-dark) !important;
+        color: #FFFFFF !important;
+        border: 1px solid var(--blue-dark) !important;
+    }
+
+    .stButton button p,
+    .stButton button span,
+    .stButton button div {
+        color: #FFFFFF !important;
+    }
+
+    div[data-testid="stDataFrame"] {
+        background: white;
+        border-radius: 14px;
+        padding: 6px;
+    }
+
+    .stAlert {
+        border-radius: 14px !important;
+    }
+
+    .stAlert div,
+    .stAlert p {
+        color: #111827 !important;
     }
 
     @media (max-width: 700px) {
-        .title {font-size: 30px;}
-        .hero {padding: 16px;}
-        .metric-value {font-size: 24px;}
+        .title { font-size: 30px; }
+        .hero { padding: 16px; }
+        .metric-value { font-size: 24px; }
     }
     </style>
     """,
@@ -568,14 +750,17 @@ for key, value in defaults.items():
 # LOGIN PAGE
 # ==================================================
 if not st.session_state.logged_in:
-    st.markdown('<div class="title">⚡ VoltIQ Technologies Pvt. Ltd</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subtitle">EV Charging Availability and Reservation System</div>', unsafe_allow_html=True)
+    st.markdown('<div class="title">⚡ VoltIQ</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="subtitle">Smart EV charging, queue and reservation system</div>',
+        unsafe_allow_html=True,
+    )
 
     st.markdown(
         """
         <div class="hero">
-            <h2>One App. Two Logins.</h2>
-            <p>User can register, save vehicle and reserve a charging slot. Host can view all users, vehicles and reservations in the same website.</p>
+            <h2>Welcome to VoltIQ</h2>
+            <p>Find nearby EV chargers, check availability, save your vehicle and reserve a slot in a simple and user-friendly way.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -584,11 +769,12 @@ if not st.session_state.logged_in:
     login_tab, signup_tab = st.tabs(["Login", "Create Account"])
 
     with login_tab:
-        login_id = st.text_input("Login ID / Email")
-        password = st.text_input("Password", type="password")
+        login_id = st.text_input("Email / Login ID", key="common_login_id")
+        password = st.text_input("Password", type="password", key="common_login_password")
 
         if st.button("Login", type="primary", use_container_width=True):
             users = load_users()
+
             matched = users[
                 (users["Email"].str.lower() == login_id.strip().lower())
                 & (users["Password Hash"] == hash_password(password))
@@ -601,8 +787,7 @@ if not st.session_state.logged_in:
                 st.session_state.user = matched.iloc[0].to_dict()
                 st.rerun()
 
-        st.info("Demo User: user@demo.com / User@123")
-        st.caption("Host Login: group 1 goated / shahid is goat")
+        st.caption("Demo user: user@demo.com / User@123")
 
     with signup_tab:
         name = st.text_input("Full Name")
@@ -617,7 +802,7 @@ if not st.session_state.logged_in:
             if not name.strip() or not signup_email.strip() or not phone.strip() or not signup_password:
                 st.error("Fill all fields.")
             elif not phone.isdigit() or len(phone) != 10:
-                st.error("Enter valid 10-digit mobile number.")
+                st.error("Enter a valid 10-digit mobile number.")
             elif signup_email.strip().lower() in users["Email"].str.lower().tolist():
                 st.error("This login ID already exists.")
             else:
@@ -637,7 +822,7 @@ if not st.session_state.logged_in:
 
                 users = pd.concat([users, new_user], ignore_index=True)
                 save_users(users)
-                st.success("Account created. Host can now see this user.")
+                st.success("Account created. Please login.")
 
     st.stop()
 
@@ -652,7 +837,7 @@ is_host = user["Role"] == "Host"
 left, right = st.columns([3, 1])
 
 with left:
-    st.markdown('<div class="title">⚡ VoltIQ Technologies Pvt. Ltd</div>', unsafe_allow_html=True)
+    st.markdown('<div class="title">⚡ VoltIQ</div>', unsafe_allow_html=True)
     st.markdown('<div class="subtitle">Live EV Charging Platform</div>', unsafe_allow_html=True)
 
 with right:
@@ -672,13 +857,12 @@ if is_host:
     vehicles = load_vehicles()
     reservations = load_reservations()
     stations_raw = make_numeric(load_stations())
-    stations = get_stations_ready()
 
     st.markdown(
         """
         <div class="hero">
             <h2>Host Dashboard</h2>
-            <p>Click refresh to see latest registrations, vehicles and reservations from users.</p>
+            <p>View users, saved vehicles, reservations, and update charger availability from one place.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -687,7 +871,7 @@ if is_host:
     if st.button("Refresh Host Data", type="primary", use_container_width=True):
         st.rerun()
 
-    active = len(reservations[reservations["Status"].isin(["Confirmed", "Queued"])]) if not reservations.empty else 0
+    active_count = len(reservations[reservations["Status"].isin(["Confirmed", "Queued"])]) if not reservations.empty else 0
 
     m1, m2, m3, m4 = st.columns(4)
     with m1:
@@ -697,13 +881,12 @@ if is_host:
     with m3:
         metric_card("Reservations", len(reservations), "total")
     with m4:
-        metric_card("Active", active, "bookings")
+        metric_card("Active", active_count, "bookings")
 
-    tab1, tab2, tab3, tab4 = st.tabs(["Reservations", "Users", "Vehicles", "Stations"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Reservations", "Users", "Vehicles", "Station Management"])
 
     with tab1:
         st.subheader("Reservations")
-
         if reservations.empty:
             st.info("No reservations yet.")
         else:
@@ -712,20 +895,20 @@ if is_host:
                 on="User ID",
                 how="left",
             )
-
             st.dataframe(display, use_container_width=True, hide_index=True)
 
             active_rows = reservations[reservations["Status"].isin(["Confirmed", "Queued"])]
-
             if not active_rows.empty:
-                selected = st.selectbox("Select reservation to complete", active_rows["Reservation ID"].tolist())
+                selected_reservation = st.selectbox(
+                    "Select reservation to complete",
+                    active_rows["Reservation ID"].tolist(),
+                )
 
                 if st.button("Mark Reservation Completed", use_container_width=True):
                     reservations = load_reservations()
                     stations_raw = make_numeric(load_stations())
 
-                    reservation_row = reservations[reservations["Reservation ID"] == selected]
-
+                    reservation_row = reservations[reservations["Reservation ID"] == selected_reservation]
                     if reservation_row.empty:
                         st.error("Reservation not found.")
                     else:
@@ -734,7 +917,6 @@ if is_host:
                         status = reservations.at[reservation_index, "Status"]
 
                         station_row = stations_raw[stations_raw["Station ID"] == station_id]
-
                         if station_row.empty:
                             st.error("Station not found.")
                         else:
@@ -742,15 +924,15 @@ if is_host:
 
                             if status == "Confirmed":
                                 stations_raw.at[station_index, "Occupied Chargers"] = max(
-                                    0,
-                                    int(stations_raw.at[station_index, "Occupied Chargers"]) - 1,
+                                    0, int(stations_raw.at[station_index, "Occupied Chargers"]) - 1
                                 )
-                                stations_raw.at[station_index, "Available Chargers"] = int(stations_raw.at[station_index, "Available Chargers"]) + 1
+                                stations_raw.at[station_index, "Available Chargers"] = int(
+                                    stations_raw.at[station_index, "Available Chargers"]
+                                ) + 1
 
                             if status == "Queued":
                                 stations_raw.at[station_index, "Queue Length"] = max(
-                                    0,
-                                    int(stations_raw.at[station_index, "Queue Length"]) - 1,
+                                    0, int(stations_raw.at[station_index, "Queue Length"]) - 1
                                 )
 
                             reservations.at[reservation_index, "Status"] = "Completed"
@@ -765,7 +947,6 @@ if is_host:
 
     with tab3:
         st.subheader("Saved Vehicles")
-
         if vehicles.empty:
             st.info("No vehicles saved yet.")
         else:
@@ -779,48 +960,50 @@ if is_host:
     with tab4:
         st.subheader("Station Management")
 
-        station_name = st.selectbox("Select Station", stations_raw["Station Name"].tolist())
-        selected_station = stations_raw[stations_raw["Station Name"] == station_name]
+        if stations_raw.empty:
+            st.info("No station data available.")
+        else:
+            station_name = st.selectbox("Select Station", stations_raw["Station Name"].tolist())
+            selected_station = stations_raw[stations_raw["Station Name"] == station_name]
 
-        if not selected_station.empty:
-            index = selected_station.index[0]
-            row = stations_raw.loc[index]
+            if not selected_station.empty:
+                index = selected_station.index[0]
+                row = stations_raw.loc[index]
 
-            with st.form("station_update_form"):
-                c1, c2, c3 = st.columns(3)
+                with st.form("station_update_form"):
+                    c1, c2, c3 = st.columns(3)
 
-                with c1:
-                    available = st.number_input("Available Chargers", min_value=0, value=int(row["Available Chargers"]))
-                    queue = st.number_input("Queue Length", min_value=0, value=int(row["Queue Length"]))
+                    with c1:
+                        available = st.number_input("Available Chargers", min_value=0, value=int(row["Available Chargers"]))
+                        queue = st.number_input("Queue Length", min_value=0, value=int(row["Queue Length"]))
 
-                with c2:
-                    occupied = st.number_input("Occupied Chargers", min_value=0, value=int(row["Occupied Chargers"]))
-                    price = st.number_input("Price per kWh", min_value=1, value=int(row["Price per kWh"]))
+                    with c2:
+                        occupied = st.number_input("Occupied Chargers", min_value=0, value=int(row["Occupied Chargers"]))
+                        price = st.number_input("Price per kWh", min_value=1, value=int(row["Price per kWh"]))
 
-                with c3:
-                    faulty = st.number_input("Faulty Chargers", min_value=0, value=int(row["Faulty Chargers"]))
-                    rating = st.number_input("Rating", min_value=1.0, max_value=5.0, value=float(row["Rating"]), step=0.1)
+                    with c3:
+                        faulty = st.number_input("Faulty Chargers", min_value=0, value=int(row["Faulty Chargers"]))
+                        rating = st.number_input("Rating", min_value=1.0, max_value=5.0, value=float(row["Rating"]), step=0.1)
 
-                update = st.form_submit_button("Update Station", use_container_width=True)
+                    update_station = st.form_submit_button("Update Station", use_container_width=True)
 
-            if update:
-                total = int(row["Total Chargers"])
+                if update_station:
+                    total = int(row["Total Chargers"])
+                    if available + occupied + faulty != total:
+                        st.error("Available + Occupied + Faulty must equal Total Chargers.")
+                    else:
+                        stations_raw.at[index, "Available Chargers"] = int(available)
+                        stations_raw.at[index, "Occupied Chargers"] = int(occupied)
+                        stations_raw.at[index, "Faulty Chargers"] = int(faulty)
+                        stations_raw.at[index, "Queue Length"] = int(queue)
+                        stations_raw.at[index, "Price per kWh"] = int(price)
+                        stations_raw.at[index, "Rating"] = float(rating)
 
-                if available + occupied + faulty != total:
-                    st.error("Available + Occupied + Faulty must equal Total Chargers.")
-                else:
-                    stations_raw.at[index, "Available Chargers"] = int(available)
-                    stations_raw.at[index, "Occupied Chargers"] = int(occupied)
-                    stations_raw.at[index, "Faulty Chargers"] = int(faulty)
-                    stations_raw.at[index, "Queue Length"] = int(queue)
-                    stations_raw.at[index, "Price per kWh"] = int(price)
-                    stations_raw.at[index, "Rating"] = float(rating)
+                        save_stations(stations_raw)
+                        st.success("Station updated successfully.")
+                        st.rerun()
 
-                    save_stations(stations_raw)
-                    st.success("Station updated. User side will also update.")
-                    st.rerun()
-
-        st.dataframe(stations_raw, use_container_width=True, hide_index=True)
+            st.dataframe(stations_raw, use_container_width=True, hide_index=True)
 
         if st.button("Reset Stations to Default", use_container_width=True):
             save_stations(pd.DataFrame(DEFAULT_STATIONS, columns=STATION_COLUMNS))
@@ -837,27 +1020,40 @@ st.markdown(
     """
     <div class="hero">
         <h2>User Dashboard</h2>
-        <p>Step 1: select your area. Step 2: find a charger. Step 3: reserve slot. Host can see your details.</p>
+        <p>Find chargers, check availability, save your vehicle and reserve your slot with ease.</p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-st.subheader("Step 1: Select Your Area")
+st.subheader("Set Location")
 
-area = st.selectbox("Your Area", list(LOCATIONS.keys()))
+loc1, loc2 = st.columns(2)
 
-if st.button("Use This Area", type="primary", use_container_width=True):
-    st.session_state.user_lat, st.session_state.user_lon = LOCATIONS[area]
-    st.success(f"Location set to {area}")
-    st.rerun()
+with loc1:
+    selected_area = st.selectbox("Choose Area Manually", list(LOCATIONS.keys()))
+    if st.button("Use Selected Area", type="primary", use_container_width=True):
+        st.session_state.user_lat, st.session_state.user_lon = LOCATIONS[selected_area]
+        st.success(f"Location set to {selected_area}")
+        st.rerun()
+
+with loc2:
+    if st.button("Use Automatic Location", use_container_width=True):
+        if get_geolocation is None:
+            st.warning("Automatic location is unavailable. Please use manual area.")
+        else:
+            location_data = get_geolocation()
+            latitude, longitude = extract_location(location_data)
+
+            if latitude is not None and longitude is not None:
+                st.session_state.user_lat = float(latitude)
+                st.session_state.user_lon = float(longitude)
+                st.success("Automatic location enabled successfully.")
+                st.rerun()
+            else:
+                st.info("Please allow browser location permission, then try again.")
 
 stations = get_stations_ready()
-
-if stations.empty:
-    save_stations(pd.DataFrame(DEFAULT_STATIONS, columns=STATION_COLUMNS))
-    st.warning("Station data was reset. Refresh the page.")
-    st.stop()
 
 st.sidebar.header("Filters")
 st.sidebar.selectbox("Area", ["All"] + sorted(stations["Area"].dropna().unique().tolist()), key="area_filter")
@@ -873,7 +1069,6 @@ if st.sidebar.button("Clear Filters"):
 filtered = apply_filters(stations)
 
 m1, m2, m3, m4 = st.columns(4)
-
 with m1:
     metric_card("Stations", len(filtered), "found")
 with m2:
@@ -881,32 +1076,29 @@ with m2:
 with m3:
     metric_card("Queue", int(filtered["Queue Length"].sum()) if not filtered.empty else 0, "vehicles")
 with m4:
-    avg = "₹0" if filtered.empty else f"₹{round(filtered['Price per kWh'].mean(), 2)}"
-    metric_card("Avg Price", avg, "per kWh")
+    avg_price = "₹0" if filtered.empty else f"₹{round(filtered['Price per kWh'].mean(), 2)}"
+    metric_card("Avg Price", avg_price, "per kWh")
 
 if filtered.empty:
-    st.warning("No stations found. Click Clear Filters in sidebar.")
+    st.warning("No stations found. Try clearing or changing filters.")
 
 tab1, tab2, tab3, tab4 = st.tabs(["Find Charger", "Reserve Slot", "My Vehicles", "My Reservations"])
 
 with tab1:
     st.subheader("Closest Available Charger")
+    best_station = find_best_station(filtered)
 
-    best = find_best_station(filtered)
-
-    if best is None:
+    if best_station is None:
         st.warning("No available charger found.")
     else:
-        station_card(best)
-        st.link_button("Open in Google Maps", best["Maps Link"])
+        station_card(best_station)
+        st.link_button("Open in Google Maps", best_station["Maps Link"])
 
-    st.subheader("All Stations")
-
+    st.subheader("All Matching Stations")
     if filtered.empty:
         st.info("No station data to show.")
     else:
         display = filtered.copy()
-
         if st.session_state.user_lat is not None:
             display = display.sort_values("Distance km", na_position="last")
 
@@ -923,20 +1115,19 @@ with tab2:
     st.subheader("Reserve Charging Slot")
 
     if filtered.empty:
-        st.warning("No stations available. Clear filters first.")
+        st.warning("No stations available for reservation.")
     else:
         booking_df = filtered.copy()
-
         if st.session_state.user_lat is not None:
             booking_df = booking_df.sort_values("Distance km", na_position="last")
 
         station_choice = st.selectbox("Select Station", booking_df["Station Name"].tolist())
-        selected = booking_df[booking_df["Station Name"] == station_choice].iloc[0]
+        selected_station = booking_df[booking_df["Station Name"] == station_choice].iloc[0]
 
         st.info(
-            f"{int(selected['Available Chargers'])} available | "
-            f"{int(selected['Queue Length'])} in queue | "
-            f"{int(selected['Estimated Wait Time'])} min wait"
+            f"{int(selected_station['Available Chargers'])} available | "
+            f"{int(selected_station['Queue Length'])} in queue | "
+            f"{int(selected_station['Estimated Wait Time'])} min wait"
         )
 
         vehicles = load_vehicles()
@@ -947,21 +1138,21 @@ with tab2:
                 vehicle_number = st.text_input("Vehicle Number")
                 ev_model = st.text_input("EV Model")
             else:
-                chosen_vehicle = st.selectbox("Select Saved Vehicle", my_vehicles["Vehicle Number"].tolist())
-                vehicle_data = my_vehicles[my_vehicles["Vehicle Number"] == chosen_vehicle].iloc[0]
-                vehicle_number = vehicle_data["Vehicle Number"]
-                ev_model = vehicle_data["EV Model"]
+                chosen_vehicle = st.selectbox("Choose Saved Vehicle", my_vehicles["Vehicle Number"].tolist())
+                vehicle_row = my_vehicles[my_vehicles["Vehicle Number"] == chosen_vehicle].iloc[0]
+                vehicle_number = vehicle_row["Vehicle Number"]
+                ev_model = vehicle_row["EV Model"]
                 st.write(f"EV Model: {ev_model}")
 
             driver_name = st.text_input("Driver Name", value=user["Name"])
             mobile = st.text_input("Mobile Number", value=user["Phone"])
-            date = st.date_input("Date")
-            time = st.time_input("Time")
+            booking_date = st.date_input("Date")
+            booking_time = st.time_input("Time")
             duration = st.selectbox("Duration", ["30 minutes", "1 hour", "1.5 hours", "2 hours"])
-            agree = st.checkbox("I agree to join queue if charger becomes unavailable.")
-            submit = st.form_submit_button("Confirm Reservation", use_container_width=True)
+            agree = st.checkbox("I agree to join the queue if the charger becomes unavailable.")
+            confirm_reservation = st.form_submit_button("Confirm Reservation", use_container_width=True)
 
-        if submit:
+        if confirm_reservation:
             reservations = load_reservations()
             stations_raw = make_numeric(load_stations())
 
@@ -975,15 +1166,15 @@ with tab2:
             ]
 
             if not vehicle_number or not ev_model or not mobile:
-                st.error("Fill vehicle and mobile details.")
+                st.error("Please fill all required details.")
             elif not mobile.isdigit() or len(mobile) != 10:
-                st.error("Enter valid 10-digit mobile number.")
+                st.error("Enter a valid 10-digit mobile number.")
             elif not agree:
-                st.error("Accept the condition.")
+                st.error("Please accept the condition to proceed.")
             elif not duplicate.empty:
                 st.warning("This vehicle already has an active reservation.")
             else:
-                station_id = selected["Station ID"]
+                station_id = selected_station["Station ID"]
                 station_rows = stations_raw[stations_raw["Station ID"] == station_id]
 
                 if station_rows.empty:
@@ -1009,9 +1200,9 @@ with tab2:
                             ev_model,
                             mobile,
                             station_id,
-                            selected["Station Name"],
-                            str(date),
-                            str(time),
+                            selected_station["Station Name"],
+                            str(booking_date),
+                            str(booking_time),
                             duration,
                             status,
                             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -1023,7 +1214,7 @@ with tab2:
                     save_reservations(reservations)
                     save_stations(stations_raw)
 
-                    st.success(f"Reservation {status.lower()} successfully. Host can now view it.")
+                    st.success(f"Reservation {status.lower()} successfully.")
                     st.rerun()
 
 with tab3:
@@ -1041,21 +1232,21 @@ with tab3:
         vehicle_number = st.text_input("Vehicle Number")
         ev_model = st.text_input("EV Model")
         connector = st.selectbox("Connector", ["CCS2", "Type 2", "CHAdeMO"])
-        battery = st.number_input("Battery Capacity kWh", min_value=10, max_value=150, value=40)
-        save_vehicle = st.form_submit_button("Save Vehicle", use_container_width=True)
+        battery_type = st.selectbox("Battery Type", BATTERY_TYPES)
+        save_vehicle_btn = st.form_submit_button("Save Vehicle", use_container_width=True)
 
-    if save_vehicle:
+    if save_vehicle_btn:
         vehicles = load_vehicles()
         vehicle_number = vehicle_number.strip().upper()
 
-        duplicate = vehicles[
+        duplicate_vehicle = vehicles[
             (vehicles["User ID"] == user_id)
             & (vehicles["Vehicle Number"] == vehicle_number)
         ]
 
         if not vehicle_number or not ev_model.strip():
-            st.error("Vehicle number and model are required.")
-        elif not duplicate.empty:
+            st.error("Vehicle number and EV model are required.")
+        elif not duplicate_vehicle.empty:
             st.error("This vehicle is already saved.")
         else:
             new_vehicle = pd.DataFrame(
@@ -1065,21 +1256,18 @@ with tab3:
                     vehicle_number,
                     ev_model.strip(),
                     connector,
-                    battery,
+                    battery_type,
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 ]],
                 columns=VEHICLE_COLUMNS,
             )
-
             vehicles = pd.concat([vehicles, new_vehicle], ignore_index=True)
             save_vehicles(vehicles)
-
-            st.success("Vehicle saved. Host can now view it.")
+            st.success("Vehicle saved successfully.")
             st.rerun()
 
 with tab4:
     st.subheader("My Reservations")
-
     reservations = load_reservations()
     my_reservations = reservations[reservations["User ID"] == user_id]
 
@@ -1087,3 +1275,4 @@ with tab4:
         st.info("No reservations yet.")
     else:
         st.dataframe(my_reservations, use_container_width=True, hide_index=True)
+
