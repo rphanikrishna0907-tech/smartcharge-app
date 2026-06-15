@@ -1196,4 +1196,3 @@ elif nav == "Profile":
                 users.at[idx, "Password Hash"] = pbkdf2_hash(new_password)
                 save_table("users", users)
                 st.success("Password changed.")
-
