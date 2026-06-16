@@ -1169,28 +1169,18 @@ elif nav == "Book":
                 battery_kwh, current_percent, target_percent, float(selected_station["Price per kWh"])
             )
             charges = booking_charges(charging_cost, priority_fee)
-            speed = max(1, min(float(selected_station["Power kW"]), battery_kwh))
-            estimated_minutes = max(1, round(energy / speed * 60))
-
-            st.subheader("Live price breakdown")
+            st.subheader("Total Price Breakdown")
             fee_cols = st.columns(5)
             with fee_cols[0]:
-                kpi("Charging cost", f"Rs. {charges['charging_cost']:,.0f}", f"{energy} kWh estimated")
+                kpi("Charging Amount", f"Rs. {charges['charging_cost']:,.0f}", f"{energy} kWh")
             with fee_cols[1]:
-                kpi("Reservation fee", f"Rs. {charges['reservation_fee']:,.0f}", "10 percent")
+                kpi("Reservation Fee", f"Rs. {charges['reservation_fee']:,.0f}", "10%")
             with fee_cols[2]:
-                kpi("Priority fee", f"Rs. {charges['priority_fee']:,.0f}", "optional add-on")
+                kpi("Priority Fee", f"Rs. {charges['priority_fee']:,.0f}", "Optional")
             with fee_cols[3]:
-                kpi("Total payable", f"Rs. {charges['total_payable']:,.0f}", "before charging")
+                kpi("Total Payable", f"Rs. {charges['total_payable']:,.0f}", "Payable now")
             with fee_cols[4]:
-                kpi("No-show penalty", f"Rs. {charges['no_show_fee']:,.0f}", "only after 30 min")
-
-            st.info(
-                f"Estimated charging time: about {estimated_minutes} minutes. "
-                f"Station owner monthly payout after commission: Rs. {charges['station_owner_payout']:,.0f}. "
-                f"VoltIQ earning from this booking: Rs. {charges['voltiq_earning']:,.0f}. "
-                f"The no-show penalty is not collected now; it applies only if you do not mark arrived within 30 minutes after your slot."
-            )
+                kpi("No-show Penalty", f"Rs. {charges['no_show_fee']:,.0f}", "If applicable")
 
             if st.button("Confirm reservation", use_container_width=True):
                 start_at = datetime.combine(booking_date, booking_time)
