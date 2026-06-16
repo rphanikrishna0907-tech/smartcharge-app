@@ -180,6 +180,7 @@ def load_table(name, columns, defaults=None):
         return df
     try:
         df = pd.read_csv(path, dtype=str).fillna("")
+        df = df.loc[:, ~df.columns.duplicated()].copy()
     except Exception:
         backup = f"{path}.broken-{datetime.now().strftime('%Y%m%d%H%M%S')}"
         try:
@@ -1430,18 +1431,22 @@ elif nav == "Charging":
 
             if st.button("Finish charging", use_container_width=True):
                 all_reservations = load_table("reservations", RESERVATION_COLUMNS)
-                ridx = all_reservations[all_reservations["Reservation ID"] == selected_id].index[0]
-                all_reservations.at[ridx, "Status"] = "Completed"
-                all_reservations.at[ridx, "Charging Cost"] = final_charges["charging_cost"]
-                all_reservations.at[ridx, "Platform Fee"] = final_charges["platform_fee"]
-                all_reservations.at[ridx, "Priority Fee"] = final_charges["priority_fee"]
-                all_reservations.at[ridx, "Cancellation Fee"] = final_charges["cancellation_fee"]
-                all_reservations.at[ridx, "No Show Fee"] = final_charges["no_show_fee"]
-                all_reservations.at[ridx, "Station Commission"] = final_charges["station_commission"]
-                all_reservations.at[ridx, "Station Owner Payout"] = final_charges["station_owner_payout"]
-                all_reservations.at[ridx, "Total Payable"] = final_charges["total_payable"]
-                all_reservations.at[ridx, "Estimated Cost"] = final_charges["total_payable"]
-                all_reservations.at[ridx, "Updated At"] = now_text()
+                reservation_mask = all_reservations["Reservation ID"] == selected_id
+                reservation_updates = {
+                    "Status": "Completed",
+                    "Charging Cost": final_charges["charging_cost"],
+                    "Platform Fee": final_charges["platform_fee"],
+                    "Priority Fee": final_charges["priority_fee"],
+                    "Cancellation Fee": final_charges["cancellation_fee"],
+                    "No Show Fee": final_charges["no_show_fee"],
+                    "Station Commission": final_charges["station_commission"],
+                    "Station Owner Payout": final_charges["station_owner_payout"],
+                    "Total Payable": final_charges["total_payable"],
+                    "Estimated Cost": final_charges["total_payable"],
+                    "Updated At": now_text(),
+                }
+                for column, value in reservation_updates.items():
+                    all_reservations.loc[reservation_mask, column] = value
                 save_table("reservations", all_reservations)
                 sessions = load_table("sessions", SESSION_COLUMNS)
                 if session_match.empty:
