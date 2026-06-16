@@ -1401,23 +1401,34 @@ elif nav == "Charging":
                 st.rerun()
         elif trip["Status"] == "Charging":
             station = stations[stations["Station ID"] == trip["Station ID"]].iloc[0]
-            with st.form("finish_session"):
-                energy = st.number_input("Energy delivered (kWh)", 0.1, 200.0, 10.0, 0.5)
-                actual_charging_cost = round(energy * float(station["Price per kWh"]), 2)
-                existing_priority_fee = float(
-                    pd.to_numeric(pd.Series([trip["Priority Fee"]]), errors="coerce").fillna(0).iloc[0]
-                )
-                final_charges = booking_charges(actual_charging_cost, existing_priority_fee)
-                st.write(
-                    f"Charging cost: **Rs. {final_charges['charging_cost']}**  \n"
-                    f"Reservation fee: **Rs. {final_charges['reservation_fee']}**  \n"
-                    f"Priority fee: **Rs. {final_charges['priority_fee']}**  \n"
-                    f"Station commission: **Rs. {final_charges['station_commission']}**  \n"
-                    f"Station owner payout: **Rs. {final_charges['station_owner_payout']}**  \n"
-                    f"Final payable amount: **Rs. {final_charges['total_payable']}**"
-                )
-                finish = st.form_submit_button("Finish charging", use_container_width=True)
-            if finish:
+            energy = st.number_input(
+                "Energy delivered (kWh)",
+                min_value=0.1,
+                max_value=200.0,
+                value=10.0,
+                step=0.5,
+                key=f"energy_delivered_{selected_id}",
+            )
+            actual_charging_cost = round(energy * float(station["Price per kWh"]), 2)
+            existing_priority_fee = float(
+                pd.to_numeric(pd.Series([trip["Priority Fee"]]), errors="coerce").fillna(0).iloc[0]
+            )
+            final_charges = booking_charges(actual_charging_cost, existing_priority_fee)
+
+            st.subheader("Final Price Breakdown")
+            final_cols = st.columns(5)
+            with final_cols[0]:
+                kpi("Charging Amount", f"Rs. {final_charges['charging_cost']:,.0f}", f"{energy} kWh")
+            with final_cols[1]:
+                kpi("Reservation Fee", f"Rs. {final_charges['reservation_fee']:,.0f}", "10%")
+            with final_cols[2]:
+                kpi("Priority Fee", f"Rs. {final_charges['priority_fee']:,.0f}", "Optional")
+            with final_cols[3]:
+                kpi("Station Payout", f"Rs. {final_charges['station_owner_payout']:,.0f}", "Monthly settlement")
+            with final_cols[4]:
+                kpi("Final Payable", f"Rs. {final_charges['total_payable']:,.0f}", "Total")
+
+            if st.button("Finish charging", use_container_width=True):
                 all_reservations = load_table("reservations", RESERVATION_COLUMNS)
                 ridx = all_reservations[all_reservations["Reservation ID"] == selected_id].index[0]
                 all_reservations.at[ridx, "Status"] = "Completed"
