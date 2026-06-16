@@ -1460,11 +1460,18 @@ elif nav == "Charging":
                     ]
                     sessions = pd.concat([sessions, pd.DataFrame([row], columns=SESSION_COLUMNS)], ignore_index=True)
                 else:
-                    sidx = sessions[sessions["Reservation ID"] == selected_id].index[-1]
-                    sessions.at[sidx, "Ended At"] = now_text()
-                    sessions.at[sidx, "Energy kWh"] = energy
-                    sessions.at[sidx, "Amount"] = final_charges["total_payable"]
-                    sessions.at[sidx, "Status"] = "Completed"
+                    session_records = sessions.to_dict("records")
+                    matching_indexes = [
+                        index for index, record in enumerate(session_records)
+                        if record.get("Reservation ID") == selected_id
+                    ]
+                    if matching_indexes:
+                        session_index = matching_indexes[-1]
+                        session_records[session_index]["Ended At"] = now_text()
+                        session_records[session_index]["Energy kWh"] = str(energy)
+                        session_records[session_index]["Amount"] = str(final_charges["total_payable"])
+                        session_records[session_index]["Status"] = "Completed"
+                    sessions = pd.DataFrame(session_records, columns=SESSION_COLUMNS)
                 save_table("sessions", sessions)
                 add_notification(
                     user_id,
