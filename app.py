@@ -272,6 +272,7 @@ def load_table(name, columns, defaults=None):
 
 
 def save_table(name, df):
+    df = df.loc[:, ~df.columns.duplicated()].copy()
     atomic_save(df, FILES[name])
 
 
@@ -1431,7 +1432,6 @@ elif nav == "Charging":
 
             if st.button("Finish charging", use_container_width=True):
                 all_reservations = load_table("reservations", RESERVATION_COLUMNS)
-                reservation_mask = all_reservations["Reservation ID"] == selected_id
                 reservation_updates = {
                     "Status": "Completed",
                     "Charging Cost": final_charges["charging_cost"],
@@ -1445,8 +1445,12 @@ elif nav == "Charging":
                     "Estimated Cost": final_charges["total_payable"],
                     "Updated At": now_text(),
                 }
-                for column, value in reservation_updates.items():
-                    all_reservations.loc[reservation_mask, column] = value
+                reservation_records = all_reservations.to_dict("records")
+                for record in reservation_records:
+                    if record.get("Reservation ID") == selected_id:
+                        for column, value in reservation_updates.items():
+                            record[column] = str(value)
+                all_reservations = pd.DataFrame(reservation_records, columns=RESERVATION_COLUMNS)
                 save_table("reservations", all_reservations)
                 sessions = load_table("sessions", SESSION_COLUMNS)
                 if session_match.empty:
