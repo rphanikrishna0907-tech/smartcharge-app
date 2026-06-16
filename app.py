@@ -75,7 +75,7 @@ RESERVATION_COLUMNS = [
     "Duration Minutes", "Connector", "Status", "Payment Status",
     "Charging Cost", "Platform Fee", "Priority Fee", "Cancellation Fee", "No Show Fee",
     "Station Commission", "Station Owner Payout",
-    "Total Payable", "Priority Booking", "Estimated Cost", "Created At", "Updated At",
+    "Total Payable", "Priority Booking", "Arrived At", "Estimated Cost", "Created At", "Updated At",
 ]
 FAVORITE_COLUMNS = ["User ID", "Station ID", "Created At"]
 REVIEW_COLUMNS = [
@@ -231,6 +231,7 @@ def load_table(name, columns, defaults=None):
         df["Station Owner Payout"] = "0"
         df["Total Payable"] = "0"
         df["Priority Booking"] = "No priority"
+        df["Arrived At"] = ""
         df["Estimated Cost"] = "0"
         df["Updated At"] = df.get("Created At", pd.Series(now_text(), index=df.index))
     for column in columns:
@@ -251,6 +252,7 @@ def load_table(name, columns, defaults=None):
         for column, default in money_defaults.items():
             df.loc[df[column].astype(str).str.strip() == "", column] = default
         df.loc[df["Priority Booking"].astype(str).str.strip() == "", "Priority Booking"] = "No priority"
+        df.loc[df["Arrived At"].astype(str).str.strip() == "", "Arrived At"] = ""
         old_estimated = pd.to_numeric(df["Estimated Cost"], errors="coerce").fillna(0)
         current_total = pd.to_numeric(df["Total Payable"], errors="coerce").fillna(0)
         legacy_rows = (current_total <= 0) & (old_estimated > 0)
@@ -433,6 +435,27 @@ def booking_charges(charging_cost, priority_fee=0):
     }
 
 
+def can_apply_no_show(reservation_row):
+    start_at = parse_dt(reservation_row.get("Start At", ""))
+    arrived_at = str(reservation_row.get("Arrived At", "")).strip()
+    if pd.isna(start_at):
+        return False
+    if arrived_at:
+        return False
+    return datetime.now() >= start_at.to_pydatetime() + timedelta(minutes=30)
+
+
+def clear_charging_amounts_for_penalty(df, index, penalty_amount):
+    df.at[index, "Charging Cost"] = 0
+    df.at[index, "Platform Fee"] = 0
+    df.at[index, "Priority Fee"] = 0
+    df.at[index, "Cancellation Fee"] = 0
+    df.at[index, "Station Commission"] = 0
+    df.at[index, "Station Owner Payout"] = 0
+    df.at[index, "Total Payable"] = penalty_amount
+    df.at[index, "Estimated Cost"] = penalty_amount
+
+
 def station_rating(station_id, fallback):
     reviews = load_table("reviews", REVIEW_COLUMNS)
     rows = reviews[reviews["Station ID"] == station_id]
@@ -483,8 +506,8 @@ def reservation_receipt(row):
         f"Reservation fee: Rs. {row['Platform Fee']}\n"
         f"Priority booking fee: Rs. {row['Priority Fee']}\n"
         f"Total payable: Rs. {row['Total Payable']}\n"
-        f"Cancellation fee: Rs. {row['Cancellation Fee']}\n"
-        f"No-show fee if absent: Rs. {row['No Show Fee']}\n"
+        f"Possible no-show fee after 30 minutes: Rs. {row['No Show Fee']}\n"
+        f"Arrived at: {row['Arrived At']}\n"
         f"Station owner payout after commission: Rs. {row['Station Owner Payout']}\n"
     )
 
@@ -774,12 +797,12 @@ if is_host:
     elif nav == "Reservations":
         page_intro("Reservation control", "Complete, cancel or promote bookings while preserving slot capacity.")
         status_filter = st.multiselect(
-            "Status", ["Confirmed", "Queued", "Charging", "Completed", "Cancelled", "No Show"],
+            "Status", ["Confirmed", "Queued", "Arrived", "Charging", "Completed", "Cancelled", "No Show"],
             default=["Confirmed", "Queued", "Charging"],
         )
         shown = reservations[reservations["Status"].isin(status_filter)] if status_filter else reservations
         st.dataframe(shown, use_container_width=True, hide_index=True)
-        actionable = reservations[reservations["Status"].isin(["Confirmed", "Queued", "Charging"])]
+        actionable = reservations[reservations["Status"].isin(["Confirmed", "Queued", "Arrived", "Charging"])]
         if not actionable.empty:
             selected_id = st.selectbox("Select reservation", actionable["Reservation ID"].tolist())
             selected = actionable[actionable["Reservation ID"] == selected_id].iloc[0]
@@ -794,49 +817,38 @@ if is_host:
                 st.rerun()
             if c2.button("Cancel reservation", use_container_width=True):
                 idx = reservations[reservations["Reservation ID"] == selected_id].index[0]
-                cancellation_fee = float(
-                    pd.to_numeric(pd.Series([selected["Cancellation Fee"]]), errors="coerce").fillna(0).iloc[0]
-                )
                 reservations.at[idx, "Status"] = "Cancelled"
-                reservations.at[idx, "Payment Status"] = f"Cancelled - fee retained by VoltIQ: Rs. {cancellation_fee:.2f}"
-                reservations.at[idx, "Charging Cost"] = 0
-                reservations.at[idx, "Platform Fee"] = 0
-                reservations.at[idx, "Priority Fee"] = 0
-                reservations.at[idx, "Station Commission"] = 0
-                reservations.at[idx, "Station Owner Payout"] = 0
-                reservations.at[idx, "Total Payable"] = cancellation_fee
-                reservations.at[idx, "Estimated Cost"] = cancellation_fee
+                reservations.at[idx, "Payment Status"] = "Cancelled - refund initiated"
+                clear_charging_amounts_for_penalty(reservations, idx, 0)
                 reservations.at[idx, "Updated At"] = now_text()
                 save_table("reservations", reservations)
                 add_notification(
                     selected["User ID"],
                     "Reservation cancelled",
-                    f"{selected_id} was cancelled. Cancellation fee retained: Rs. {cancellation_fee:.2f}.",
+                    f"{selected_id} was cancelled. Refund has been initiated.",
                 )
                 promote_queue(selected["Station ID"])
                 st.rerun()
             if c3.button("Mark no-show", use_container_width=True):
                 idx = reservations[reservations["Reservation ID"] == selected_id].index[0]
                 no_show_fee = float(pd.to_numeric(pd.Series([selected["No Show Fee"]]), errors="coerce").fillna(0).iloc[0])
-                reservations.at[idx, "Status"] = "No Show"
-                reservations.at[idx, "Payment Status"] = f"No-show fee retained by VoltIQ: Rs. {no_show_fee:.2f}"
-                reservations.at[idx, "Charging Cost"] = 0
-                reservations.at[idx, "Platform Fee"] = 0
-                reservations.at[idx, "Priority Fee"] = 0
-                reservations.at[idx, "Cancellation Fee"] = 0
-                reservations.at[idx, "Station Commission"] = 0
-                reservations.at[idx, "Station Owner Payout"] = 0
-                reservations.at[idx, "Total Payable"] = no_show_fee
-                reservations.at[idx, "Estimated Cost"] = no_show_fee
-                reservations.at[idx, "Updated At"] = now_text()
-                save_table("reservations", reservations)
-                add_notification(
-                    selected["User ID"],
-                    "No-show fee applied",
-                    f"You were marked absent for {selected['Station Name']}. No-show fee: Rs. {no_show_fee:.2f}.",
-                )
-                promote_queue(selected["Station ID"])
-                st.rerun()
+                if selected["Status"] in ["Arrived", "Charging", "Completed"]:
+                    st.error("This user has already arrived or started charging.")
+                elif not can_apply_no_show(selected):
+                    st.error("No-show can be applied only 30 minutes after the booked start time if the user has not arrived.")
+                else:
+                    reservations.at[idx, "Status"] = "No Show"
+                    reservations.at[idx, "Payment Status"] = f"No-show fee retained by VoltIQ: Rs. {no_show_fee:.2f}"
+                    clear_charging_amounts_for_penalty(reservations, idx, no_show_fee)
+                    reservations.at[idx, "Updated At"] = now_text()
+                    save_table("reservations", reservations)
+                    add_notification(
+                        selected["User ID"],
+                        "No-show fee applied",
+                        f"You did not arrive within 30 minutes for {selected['Station Name']}. No-show fee: Rs. {no_show_fee:.2f}.",
+                    )
+                    promote_queue(selected["Station ID"])
+                    st.rerun()
 
     elif nav == "Stations":
         page_intro("Station management", "Maintain capacity, faults, pricing and operating status.")
@@ -907,12 +919,11 @@ if is_host:
         ]:
             finance[column] = pd.to_numeric(finance[column], errors="coerce").fillna(0)
 
-        payable_statuses = ["Confirmed", "Queued", "Charging", "Completed", "Cancelled", "No Show"]
+        payable_statuses = ["Confirmed", "Queued", "Arrived", "Charging", "Completed", "No Show"]
         payable = finance[finance["Status"].isin(payable_statuses)].copy()
         charging_value = payable["Charging Cost"].sum()
         reservation_fee_value = payable["Platform Fee"].sum()
         priority_value = payable["Priority Fee"].sum()
-        cancellation_value = finance[finance["Status"] == "Cancelled"]["Total Payable"].sum()
         no_show_value = finance[finance["Status"] == "No Show"]["Total Payable"].sum()
         station_commission_value = payable["Station Commission"].sum()
         station_payout = payable["Station Owner Payout"].sum()
@@ -920,7 +931,6 @@ if is_host:
             reservation_fee_value
             + priority_value
             + station_commission_value
-            + cancellation_value
             + no_show_value
         )
         total_collected = payable["Total Payable"].sum()
@@ -957,12 +967,12 @@ if is_host:
             )
             st.dataframe(settlement, use_container_width=True, hide_index=True)
 
-            st.subheader("Cancellation and no-show fees")
+            st.subheader("No-show fees and cancelled bookings")
             penalty = finance[finance["Status"].isin(["Cancelled", "No Show"])][
                 ["Reservation ID", "Station Name", "Vehicle Number", "Status", "Total Payable", "Payment Status"]
             ]
             if penalty.empty:
-                st.info("No cancellation or no-show fees yet.")
+                st.info("No no-show fees or cancelled bookings yet.")
             else:
                 st.dataframe(penalty, use_container_width=True, hide_index=True)
 
@@ -1173,12 +1183,13 @@ elif nav == "Book":
             with fee_cols[3]:
                 kpi("Total payable", f"Rs. {charges['total_payable']:,.0f}", "before charging")
             with fee_cols[4]:
-                kpi("Cancel/no-show fee", f"Rs. {charges['no_show_fee']:,.0f}", "5 percent of total")
+                kpi("No-show penalty", f"Rs. {charges['no_show_fee']:,.0f}", "only after 30 min")
 
             st.info(
                 f"Estimated charging time: about {estimated_minutes} minutes. "
                 f"Station owner monthly payout after commission: Rs. {charges['station_owner_payout']:,.0f}. "
-                f"VoltIQ earning from this booking: Rs. {charges['voltiq_earning']:,.0f}."
+                f"VoltIQ earning from this booking: Rs. {charges['voltiq_earning']:,.0f}. "
+                f"The no-show penalty is not collected now; it applies only if you do not mark arrived within 30 minutes after your slot."
             )
 
             if st.button("Confirm reservation", use_container_width=True):
@@ -1217,7 +1228,7 @@ elif nav == "Book":
                         charges["cancellation_fee"], charges["no_show_fee"],
                         charges["station_commission"], charges["station_owner_payout"],
                         charges["total_payable"], priority_choice,
-                        charges["total_payable"], now_text(), now_text(),
+                        "", charges["total_payable"], now_text(), now_text(),
                     ]
                     fresh_reservations = pd.concat(
                         [fresh_reservations, pd.DataFrame([row], columns=RESERVATION_COLUMNS)],
@@ -1241,8 +1252,8 @@ elif nav == "My trips":
         my_reservations["_start"] = pd.to_datetime(my_reservations["Start At"], errors="coerce")
         my_reservations = my_reservations.sort_values("_start", ascending=False)
         status_filter = st.multiselect(
-            "Show status", ["Confirmed", "Queued", "Charging", "Completed", "Cancelled", "No Show"],
-            default=["Confirmed", "Queued", "Charging", "Completed"],
+            "Show status", ["Confirmed", "Queued", "Arrived", "Charging", "Completed", "Cancelled", "No Show"],
+            default=["Confirmed", "Queued", "Arrived", "Charging", "Completed"],
         )
         shown = my_reservations[my_reservations["Status"].isin(status_filter)]
         st.dataframe(
@@ -1255,7 +1266,7 @@ elif nav == "My trips":
             ],
             use_container_width=True, hide_index=True,
         )
-        active = my_reservations[my_reservations["Status"].isin(["Confirmed", "Queued"])]
+        active = my_reservations[my_reservations["Status"].isin(["Confirmed", "Queued", "Arrived"])]
         if not active.empty:
             selected_id = st.selectbox("Manage reservation", active["Reservation ID"].tolist())
             selected = active[active["Reservation ID"] == selected_id].iloc[0]
@@ -1263,24 +1274,15 @@ elif nav == "My trips":
             if c1.button("Cancel", use_container_width=True):
                 all_reservations = load_table("reservations", RESERVATION_COLUMNS)
                 idx = all_reservations[all_reservations["Reservation ID"] == selected_id].index[0]
-                cancellation_fee = float(
-                    pd.to_numeric(pd.Series([selected["Cancellation Fee"]]), errors="coerce").fillna(0).iloc[0]
-                )
                 all_reservations.at[idx, "Status"] = "Cancelled"
-                all_reservations.at[idx, "Payment Status"] = f"Cancelled - fee retained by VoltIQ: Rs. {cancellation_fee:.2f}"
-                all_reservations.at[idx, "Charging Cost"] = 0
-                all_reservations.at[idx, "Platform Fee"] = 0
-                all_reservations.at[idx, "Priority Fee"] = 0
-                all_reservations.at[idx, "Station Commission"] = 0
-                all_reservations.at[idx, "Station Owner Payout"] = 0
-                all_reservations.at[idx, "Total Payable"] = cancellation_fee
-                all_reservations.at[idx, "Estimated Cost"] = cancellation_fee
+                all_reservations.at[idx, "Payment Status"] = "Cancelled - refund initiated"
+                clear_charging_amounts_for_penalty(all_reservations, idx, 0)
                 all_reservations.at[idx, "Updated At"] = now_text()
                 save_table("reservations", all_reservations)
                 add_notification(
                     user_id,
                     "Reservation cancelled",
-                    f"{selected_id} has been cancelled. Cancellation fee retained: Rs. {cancellation_fee:.2f}.",
+                    f"{selected_id} has been cancelled. Refund has been initiated.",
                 )
                 promote_queue(selected["Station ID"])
                 st.rerun()
@@ -1369,18 +1371,34 @@ elif nav == "Garage":
                 st.rerun()
 
 elif nav == "Charging":
-    page_intro("Charging sessions", "Start eligible reservations, record energy delivered and generate final session costs.")
-    current = my_reservations[my_reservations["Status"].isin(["Confirmed", "Charging"])]
+    page_intro("Charging sessions", "Mark arrival, start charging and finish your charging session.")
+    current = my_reservations[my_reservations["Status"].isin(["Confirmed", "Arrived", "Charging"])]
     if current.empty:
         st.info("No confirmed or active charging sessions.")
     else:
         selected_id = st.selectbox("Reservation", current["Reservation ID"].tolist())
         trip = current[current["Reservation ID"] == selected_id].iloc[0]
         st.write(f"**{trip['Station Name']}** · {trip['Vehicle Number']} · {trip['Start At']}")
+        start_at = parse_dt(trip["Start At"])
+        if pd.notna(start_at):
+            deadline = start_at.to_pydatetime() + timedelta(minutes=30)
+            st.caption(f"Arrival deadline for avoiding no-show: {deadline:%Y-%m-%d %H:%M}")
         sessions = load_table("sessions", SESSION_COLUMNS)
         session_match = sessions[sessions["Reservation ID"] == selected_id]
         if trip["Status"] == "Confirmed":
-            if st.button("Start charging", use_container_width=True):
+            st.info("First mark that you have reached the station. Charging can be started after arrival.")
+            if st.button("I have reached the station", use_container_width=True):
+                all_reservations = load_table("reservations", RESERVATION_COLUMNS)
+                idx = all_reservations[all_reservations["Reservation ID"] == selected_id].index[0]
+                all_reservations.at[idx, "Status"] = "Arrived"
+                all_reservations.at[idx, "Arrived At"] = now_text()
+                all_reservations.at[idx, "Updated At"] = now_text()
+                save_table("reservations", all_reservations)
+                add_notification(user_id, "Arrival confirmed", f"You marked arrival at {trip['Station Name']}.")
+                st.rerun()
+        elif trip["Status"] == "Arrived":
+            st.success(f"Arrived at: {trip['Arrived At']}")
+            if st.button("Start charging now", use_container_width=True):
                 all_reservations = load_table("reservations", RESERVATION_COLUMNS)
                 idx = all_reservations[all_reservations["Reservation ID"] == selected_id].index[0]
                 all_reservations.at[idx, "Status"] = "Charging"
@@ -1391,7 +1409,7 @@ elif nav == "Charging":
                 save_table("sessions", sessions)
                 add_notification(user_id, "Charging started", f"Session started at {trip['Station Name']}.")
                 st.rerun()
-        else:
+        elif trip["Status"] == "Charging":
             station = stations[stations["Station ID"] == trip["Station ID"]].iloc[0]
             with st.form("finish_session"):
                 energy = st.number_input("Energy delivered (kWh)", 0.1, 200.0, 10.0, 0.5)
