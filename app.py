@@ -920,6 +920,8 @@ if is_host:
             "No Show Fee", "Station Commission", "Station Owner Payout", "Total Payable",
         ]:
             finance[column] = pd.to_numeric(finance[column], errors="coerce").fillna(0)
+        finance["_created"] = pd.to_datetime(finance["Created At"], errors="coerce")
+        finance["Settlement Month"] = finance["_created"].dt.strftime("%Y-%m").fillna("Unknown")
 
         payable_statuses = ["Confirmed", "Queued", "Arrived", "Charging", "Completed", "No Show"]
         payable = finance[finance["Status"].isin(payable_statuses)].copy()
@@ -952,22 +954,22 @@ if is_host:
         if finance.empty:
             st.info("Finance data will appear after bookings.")
         else:
-            finance["_created"] = pd.to_datetime(finance["Created At"], errors="coerce")
-            finance["Settlement Month"] = finance["_created"].dt.strftime("%Y-%m").fillna("Unknown")
-
             st.subheader("Monthly station-owner settlement")
-            settlement = payable.groupby(["Settlement Month", "Station Name"], dropna=False)[
-                [
-                    "Charging Cost", "Station Commission", "Station Owner Payout",
-                    "Platform Fee", "Priority Fee", "Total Payable",
-                ]
-            ].sum().reset_index()
-            settlement["VoltIQ Earnings"] = (
-                settlement["Platform Fee"]
-                + settlement["Priority Fee"]
-                + settlement["Station Commission"]
-            )
-            st.dataframe(settlement, use_container_width=True, hide_index=True)
+            if payable.empty:
+                st.info("No payable bookings available for settlement.")
+            else:
+                settlement = payable.groupby(["Settlement Month", "Station Name"], dropna=False)[
+                    [
+                        "Charging Cost", "Station Commission", "Station Owner Payout",
+                        "Platform Fee", "Priority Fee", "Total Payable",
+                    ]
+                ].sum().reset_index()
+                settlement["VoltIQ Earnings"] = (
+                    settlement["Platform Fee"]
+                    + settlement["Priority Fee"]
+                    + settlement["Station Commission"]
+                )
+                st.dataframe(settlement, use_container_width=True, hide_index=True)
 
             st.subheader("No-show fees and cancelled bookings")
             penalty = finance[finance["Status"].isin(["Cancelled", "No Show"])][
